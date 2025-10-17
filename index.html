@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>GeoEmisi AR</title>
+<title>GeoEmisi AR — Fullscreen AR</title>
 
-<!-- Tailwind for quick styling -->
+<!-- TailwindCSS (CDN) for quick styling -->
 <script src="https://cdn.tailwindcss.com"></script>
 
 <!-- Leaflet (OpenStreetMap) -->
@@ -16,143 +16,215 @@
 <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
 
 <style>
-  body { font-family: Inter, system-ui, -apple-system, "Poppins", sans-serif; background:#f0f9ff; }
-  #student-mode { min-height:100vh; display:flex; flex-direction:column; }
-  .camera-feed { position:relative; height:60vh; background:#000; overflow:hidden; border-radius:12px; }
-  #camera-feed { width:100%; height:100%; object-fit:cover; }
-  #ar-overlay { position:absolute; inset:0; pointer-events:none; z-index:20; }
-  .controls { display:flex; gap:8px; align-items:center; }
-  .panel { background:white; border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,0.06); }
-  #student-map { height:35vh; border-radius:12px; }
-  .hidden{display:none;}
+  :root{
+    --bg:#071027;
+    --panel: rgba(255,255,255,0.04);
+    --muted: rgba(255,255,255,0.6);
+    --accent: #7c3aed;
+  }
+  html,body{height:100%; background:linear-gradient(180deg,#031226 0%, #071027 60%); color:#E6EEF8; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
+  .app-shell{max-width:1200px;margin:24px auto;padding:18px;}
+  .glass{background:var(--panel); backdrop-filter:blur(6px); border-radius:14px; box-shadow:0 8px 30px rgba(2,6,23,0.6); border:1px solid rgba(255,255,255,0.03);}
+  .floating-card{padding:12px;}
+  .btn {transition:all .18s cubic-bezier(.2,.9,.2,1); border-radius:10px; padding:8px 12px; font-weight:600;}
+  .btn-ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted);}
+  .btn-primary{background:linear-gradient(90deg,var(--accent),#4f46e5); color:white; box-shadow:0 8px 30px rgba(79,70,229,0.12);}
+  #camera-feed{width:100%; height:100%; object-fit:cover; display:block;}
+  /* AR fullscreen modal */
+  #ar-fullscreen{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; background:linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.25)); }
+  #ar-inner{ width:100%; height:100%; display:flex; flex-direction:column; }
+  .ar-top { display:flex; justify-content:space-between; gap:12px; padding:12px; align-items:center; }
+  .ar-controls { display:flex; gap:8px; align-items:center; }
+  model-viewer { width:100%; height:calc(100vh - 72px); background:transparent; }
+  .hide-when-ar{ transition:opacity .25s ease; }
+  .show { display:flex; }
+  .fade-in { animation:fadeIn .22s ease both; }
+  @keyframes fadeIn { from {opacity:0; transform:translateY(6px);} to {opacity:1; transform:none;} }
+  /* object list */
+  #object-list { max-height:56vh; overflow:auto; padding-right:6px; }
+  .obj-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border:1px solid rgba(255,255,255,0.02); }
+  .muted { color:var(--muted); font-size:13px; }
+  /* small map */
+  #student-map { height:260px; border-radius:10px; overflow:hidden; }
+  /* emission card */
+  .emission-card { padding:12px; border-radius:10px; background:linear-gradient(90deg, rgba(124,58,237,0.12), rgba(79,70,229,0.06)); color:white; }
+  /* responsive */
+  @media (max-width:900px){
+    .app-shell{margin:8px;}
+  }
 </style>
 </head>
 <body>
-  <div class="max-w-5xl mx-auto p-4">
-    <h1 class="text-3xl font-bold mb-2">GeoEmisi AR</h1>
-    <p class="text-sm text-gray-600 mb-4">Pilih objek (.glb) — lokasi awal dicatat saat memilih. Lihat model di AR dan hitung emisi saat sampai.</p>
+  <div class="app-shell">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-bold">GeoEmisi AR</h1>
+        <div class="muted">Pilih objek → rekam lokasi start → lihat AR fullscreen → tekan "Sampai" untuk menghitung emisi.</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <select id="vehicle-select" class="btn btn-ghost">
+          <option value="motor">Motor</option>
+          <option value="mobil" selected>Mobil</option>
+          <option value="truk">Truk</option>
+        </select>
+        <button id="btn-sampai-floating" class="btn btn-primary">Sampai</button>
+      </div>
+    </div>
 
-    <!-- Loading / status -->
-    <div id="status" class="mb-3 panel">Memuat daftar objek...</div>
-
-    <!-- Main layout -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- Left column: camera / AR -->
-      <div class="md:col-span-2">
-        <div class="camera-feed panel">
-          <video id="camera-feed" autoplay playsinline muted></video>
-          <div id="ar-overlay"></div>
-
-          <!-- AR Controls overlay -->
-          <div style="position:absolute; top:12px; left:12px; z-index:40;">
-            <button id="btn-view-map" class="px-3 py-2 rounded bg-white">Peta</button>
-          </div>
-
-          <div style="position:absolute; top:12px; right:12px; z-index:40;" class="flex gap-2">
-            <select id="vehicle-select" class="px-3 py-2 rounded">
-              <option value="motor">Motor</option>
-              <option value="mobil" selected>Mobil</option>
-              <option value="truk">Truk</option>
-            </select>
-            <button id="btn-sampai" class="px-3 py-2 rounded bg-green-500 text-white">Sampai</button>
-          </div>
-
-          <!-- show emission result -->
-          <div id="emission-result" style="position:absolute; bottom:14px; left:14px; z-index:40;" class="panel hidden"></div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <!-- Left: Camera preview + AR quick area -->
+      <div class="lg:col-span-2 glass floating-card relative">
+        <div class="flex items-center justify-between mb-3">
+          <div class="muted">Preview Kamera</div>
+          <div class="muted text-sm">AR mode akan fullscreen saat lihat objek</div>
         </div>
 
-        <!-- model viewer modal (for placing the .glb on ground) -->
-        <div id="model-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
-          <div class="bg-white rounded-lg w-[90%] max-w-2xl p-4">
-            <div class="flex justify-between items-center mb-2">
-              <h3 class="font-semibold">Lihat / Letakkan Objek (AR)</h3>
-              <button id="close-model" class="px-2 py-1 rounded bg-gray-100">Tutup</button>
+        <div id="camera-area" class="rounded-lg overflow-hidden" style="height:420px; position:relative;">
+          <video id="camera-feed" autoplay playsinline muted></video>
+
+          <!-- overlay UI on top of camera preview -->
+          <div style="position:absolute; inset:12px; pointer-events:none;">
+            <div style="display:flex; justify-content:flex-start; gap:8px;">
+              <div id="selected-chip" class="muted glass px-3 py-1 rounded-md hide-when-ar">Belum memilih objek</div>
             </div>
-            <model-viewer id="model-viewer" style="width:100%; height:70vh;" camera-controls ar ar-modes="webxr scene-viewer quick-look" interaction-prompt="auto"></model-viewer>
-            <div class="mt-2 text-sm text-gray-600">Tekan tombol AR (jika tersedia) untuk menempatkan model di permukaan nyata.</div>
+            <div style="position:absolute; right:12px; bottom:12px; pointer-events:auto;">
+              <button id="open-map-btn" class="btn btn-ghost hide-when-ar">Buka Peta</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between">
+          <div class="muted">Status: <span id="status">Memuat objek...</span></div>
+          <div class="flex gap-2">
+            <button id="refresh-csv" class="btn btn-ghost">Muat ulang CSV</button>
+            <button id="center-me" class="btn btn-ghost">Cari Saya</button>
           </div>
         </div>
       </div>
 
-      <!-- Right column: list + map -->
-      <div class="">
-        <div class="panel mb-4">
-          <h4 class="font-semibold mb-2">Daftar Objek (CSV)</h4>
-          <div id="object-list" class="space-y-2 max-h-[40vh] overflow-auto"></div>
+      <!-- Right: List + Map + Emission -->
+      <div class="glass floating-card">
+        <div class="mb-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold">Daftar Objek</h3>
+            <div class="muted text-sm">CSV publik</div>
+          </div>
         </div>
 
-        <div class="panel">
-          <h4 class="font-semibold mb-2">Peta (OpenStreetMap)</h4>
-          <div id="student-map"></div>
-          <div class="mt-2 text-xs text-gray-500">Titik start dicatat saat memilih objek; titik end dicatat saat tekan "Sampai".</div>
+        <div id="object-list" class="space-y-2 mb-3">
+          <!-- rows injected -->
         </div>
+
+        <div class="mb-3">
+          <h4 class="font-semibold mb-2">Peta</h4>
+          <div id="student-map"></div>
+        </div>
+
+        <div class="emission-card">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="muted">Hasil Terakhir</div>
+              <div id="last-summary" class="font-semibold">Belum ada perhitungan</div>
+            </div>
+            <div class="text-right muted">
+              <div id="last-distance">— km</div>
+              <div id="last-emission">— kg CO₂</div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
 
+  <!-- FULLSCREEN AR LAYER (hidden until open) -->
+  <div id="ar-fullscreen" aria-hidden="true">
+    <div id="ar-inner" class="fade-in">
+      <div class="ar-top glass">
+        <div class="flex items-center gap-3">
+          <button id="exit-ar" class="btn btn-ghost">Keluar</button>
+          <div id="ar-title" class="font-semibold">Objek AR</div>
+          <div class="muted" id="ar-sub">—</div>
+        </div>
+        <div class="ar-controls">
+          <button id="ar-sampai" class="btn btn-primary">Sampai</button>
+        </div>
+      </div>
+
+      <!-- model-viewer - covers remaining area -->
+      <model-viewer id="model-viewer"
+                    camera-controls
+                    environment-image="neutral"
+                    shadow-intensity="1"
+                    interaction-prompt="auto"
+                    ar
+                    ar-modes="webxr scene-viewer quick-look"
+                    style="background:transparent;">
+      </model-viewer>
+    </div>
+  </div>
+
 <script>
-/*
-  GeoEmisi AR - simplified flow:
-  - CSV has only: name,url (glb)
-  - When user clicks an object: capture current geolocation -> store as object's lat/lng and as startPoint
-    and show option "Lihat Objek" which opens model-viewer (with ar)
-  - When user taps "Sampai": capture geolocation -> store as endPoint, compute distance start->end, compute emissions
-  - Vehicles: motor, mobil, truk with default emission factors (g CO2 per km)
-  - Object in AR overlay is anchored by world coords (we simulate by Leaflet marker + overlay behavior)
-*/
+/* =========================
+   GeoEmisi AR — Fullscreen AR
+   - CSV: only name + url(.glb)
+   - When user clicks "Pilih": record current geolocation as START (object's world coordinate)
+   - "Lihat Objek": open fullscreen AR (hide map/other UI). model-viewer handles AR placement on real ground.
+   - "Sampai" (in fullscreen AR or floating): record current geolocation as END, compute distance & emission
+   ========================= */
 
-/* ========== CONFIG ========== */
+/* CONFIG */
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
+const EMISSION_FACTORS = { motor:120, mobil:200, truk:900 };
 
-// emission factors (g CO2 / km) — defaults, can be adjusted
-const EMISSION_FACTORS = {
-  motor: 120,   // motorcycle ~120 g/km (example)
-  mobil: 200,   // car ~200 g/km (example)
-  truk: 900     // truck ~900 g/km (example)
-};
-
-/* ========== STATE ========== */
-let arContents = [];     // { id, title, url, lat?, lng?, startRecorded:bool }
-let selected = null;     // currently selected object (reference)
-let startPoint = null;   // {lat,lng}
+/* STATE */
+let items = [];           // {id, title, url, lat?, lng?, startRecorded}
+let selected = null;
+let startPoint = null;
 let endPoint = null;
 let currentPosition = null;
 
-/* ========== UI refs ========== */
+/* UI refs */
 const statusEl = document.getElementById('status');
 const objectListEl = document.getElementById('object-list');
-const studentMapEl = document.getElementById('student-map');
 const cameraVideo = document.getElementById('camera-feed');
-const modelModal = document.getElementById('model-modal');
 const modelViewer = document.getElementById('model-viewer');
-const closeModelBtn = document.getElementById('close-model');
-const btnSampai = document.getElementById('btn-sampai');
+const arFullscreen = document.getElementById('ar-fullscreen');
+const arTitle = document.getElementById('ar-title');
+const arSub = document.getElementById('ar-sub');
+const exitArBtn = document.getElementById('exit-ar');
+const arSampaiBtn = document.getElementById('ar-sampai');
+const btnSampaiFloating = document.getElementById('btn-sampai-floating');
 const vehicleSelect = document.getElementById('vehicle-select');
-const emissionResult = document.getElementById('emission-result');
-const arOverlay = document.getElementById('ar-overlay');
-const btnViewMap = document.getElementById('btn-view-map');
+const lastSummary = document.getElementById('last-summary');
+const lastDistance = document.getElementById('last-distance');
+const lastEmission = document.getElementById('last-emission');
+const selectedChip = document.getElementById('selected-chip');
+const refreshCsvBtn = document.getElementById('refresh-csv');
+const centerMeBtn = document.getElementById('center-me');
+const openMapBtn = document.getElementById('open-map-btn');
 
+/* MAP */
 let map = null;
-let leafletMarkers = {}; // id -> marker
+let leafletMarkers = {};
 
-/* ========== UTILITIES ========== */
+/* UTIL: parse CSV (name/url) robustly */
 function parseCSV(text){
-  const lines = text.trim().split('\n').map(l => l.trim()).filter(l=>l);
+  const lines = text.trim().split('\n').filter(Boolean);
   const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
   const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nama') || h.includes('title'));
-  const urlIdx = headers.findIndex(h => h.includes('url') || h.includes('glb') || h.includes('model'));
-  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus punya kolom name dan url');
+  const urlIdx = headers.findIndex(h => h.includes('url') || h.includes('glb') || h.includes('model') || h.includes('link'));
+  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus memiliki kolom name dan url');
   const rows = [];
   for(let i=1;i<lines.length;i++){
-    const cols = lines[i].split(',').map(c=>c.trim());
-    if(cols[nameIdx] && cols[urlIdx]){
-      rows.push({ title: cols[nameIdx], url: cols[urlIdx] });
-    }
+    // naive split but fine for simple CSV from Sheets
+    const parts = lines[i].split(',').map(p=>p.trim());
+    if(parts[nameIdx] && parts[urlIdx]) rows.push({ title: parts[nameIdx], url: parts[urlIdx] });
   }
   return rows;
 }
 
-// Haversine (meters)
+/* Haversine (meters) */
 function distanceMeters(lat1, lon1, lat2, lon2){
   const R = 6371e3;
   const toRad = v => v * Math.PI / 180;
@@ -163,128 +235,195 @@ function distanceMeters(lat1, lon1, lat2, lon2){
   return R * c;
 }
 
-/* ========== CSV LOADING ========== */
-async function loadCSVAndPopulate(){
+/* bearing (deg) */
+function bearing(lat1, lon1, lat2, lon2){
+  const toRad = v => v * Math.PI/180, toDeg = v=>v*180/Math.PI;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (toDeg(Math.atan2(y,x)) + 360) % 360;
+}
+
+/* CSV load */
+async function loadCSV(){
   statusEl.textContent = 'Memuat CSV...';
   try{
     const r = await fetch(CSV_URL);
-    if(!r.ok) throw new Error('CSV fetch gagal');
+    if(!r.ok) throw new Error('Gagal fetch CSV');
     const txt = await r.text();
     const rows = parseCSV(txt);
-    arContents = rows.map((r,i)=>({ id: 'obj_'+i, title: r.title, url: r.url, startRecorded:false }));
-    statusEl.textContent = `Memuat ${arContents.length} objek. Pilih salah satu untuk mulai (lokasi akan dicatat saat pilih).`;
-    renderObjectList();
+    // map rows -> items
+    items = rows.map((r,i)=>({ id:`obj_${i}`, title:r.title, url:r.url, startRecorded:false }));
+    statusEl.textContent = `Memuat ${items.length} objek`;
+    renderList();
   }catch(err){
     console.error(err);
-    statusEl.textContent = 'Gagal memuat CSV. Pastikan URL CSV bisa diakses publik.';
+    statusEl.textContent = 'Gagal memuat CSV. Pastikan publik.';
   }
 }
 
-/* ========== RENDER LIST ========== */
-
-function renderObjectList(){
+/* render list */
+function renderList(){
   objectListEl.innerHTML = '';
-  arContents.forEach(item=>{
+  items.forEach(item=>{
     const div = document.createElement('div');
-    div.className = 'flex items-center justify-between p-2 border rounded';
+    div.className = 'obj-row';
     div.innerHTML = `
-      <div>
-        <div class="font-medium">${item.title}</div>
-        <div class="text-xs text-gray-500">${item.url.split('/').pop()}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="font-semibold">${item.title}</div>
+        <div class="muted text-xs">${(item.url||'').split('/').pop()}</div>
       </div>
-      <div class="flex flex-col gap-2 items-end">
-        <div>
-          <button data-id="${item.id}" class="btn-select px-3 py-1 rounded bg-blue-600 text-white text-sm">Pilih</button>
+      <div class="flex flex-col gap-2" style="min-width:120px;align-items:flex-end;">
+        <div style="display:flex; gap:8px;">
+          <button data-id="${item.id}" class="btn btn-ghost btn-select">Pilih</button>
+          <button data-id="${item.id}" class="btn btn-primary btn-view">Lihat</button>
         </div>
-        <div>
-          <button data-id="${item.id}" class="btn-view px-3 py-1 rounded bg-gray-100 text-sm">Lihat Objek</button>
-        </div>
+        <div class="muted text-xs">${item.startRecorded? 'Start tercatat':''}</div>
       </div>
     `;
     objectListEl.appendChild(div);
   });
 
-  // attach listeners
-  document.querySelectorAll('.btn-select').forEach(btn=>{
-    btn.addEventListener('click', async (e)=>{
+  // listeners
+  document.querySelectorAll('.btn-select').forEach(b=>{
+    b.addEventListener('click', async (e)=>{
       const id = e.currentTarget.dataset.id;
-      await handleSelectObject(id);
+      await handleSelect(id);
     });
   });
-  document.querySelectorAll('.btn-view').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
+  document.querySelectorAll('.btn-view').forEach(b=>{
+    b.addEventListener('click', (e)=>{
       const id = e.currentTarget.dataset.id;
-      handleViewObject(id);
+      handleView(id);
     });
   });
 }
 
-/* ========== SELECT OBJECT => RECORD START LOCATION ========== */
-
-async function handleSelectObject(id){
-  const obj = arContents.find(o=>o.id===id);
+/* select: record start using geolocation */
+async function handleSelect(id){
+  const obj = items.find(i=>i.id===id);
   if(!obj) return;
-  // Get current location
   statusEl.textContent = 'Mencatat lokasi start...';
   try{
-    const pos = await getCurrentPositionPromise({ enableHighAccuracy:true, timeout:10000 });
+    const pos = await getCurrentPosition({ enableHighAccuracy:true, timeout:12000 });
     obj.lat = pos.coords.latitude;
     obj.lng = pos.coords.longitude;
     obj.startRecorded = true;
     startPoint = { lat: obj.lat, lng: obj.lng, time: Date.now(), objectId: obj.id };
     selected = obj;
-    statusEl.textContent = `Dipilih: ${obj.title} — start dicatat (${obj.lat.toFixed(6)}, ${obj.lng.toFixed(6)})`;
+    statusEl.textContent = `Dipilih: ${obj.title} • (${obj.lat.toFixed(5)}, ${obj.lng.toFixed(5)})`;
+    selectedChip.textContent = `${obj.title} • start tercatat`;
     placeMarker(obj);
     // center map
-    if(map) map.setView([obj.lat, obj.lng], 18);
+    if(map) map.setView([obj.lat, obj.lng], 17);
+    renderList();
   }catch(err){
+    alert('Gagal ambil lokasi. Aktifkan izin lokasi di browser.');
     console.error(err);
-    alert('Tidak dapat mengambil lokasi — pastikan izin lokasi diaktifkan.');
-    statusEl.textContent = 'Gagal mencatat lokasi start.';
+    statusEl.textContent = 'Gagal mencatat start';
   }
 }
 
-/* ========== VIEW OBJECT (model-viewer) ========== */
-
-function handleViewObject(id){
-  const obj = arContents.find(o=>o.id===id);
+/* view: open fullscreen AR modal, hide map area */
+function handleView(id){
+  const obj = items.find(i=>i.id===id);
   if(!obj) return;
-  // set model-viewer src and open modal
+  // ensure model url present
   modelViewer.setAttribute('src', obj.url);
-  modelModal.classList.remove('hidden');
-  modelViewer.scrollIntoView({behavior:'smooth'});
+  arTitle.textContent = obj.title;
+  arSub.textContent = (obj.startRecorded ? `Start: ${obj.lat.toFixed(5)}, ${obj.lng.toFixed(5)}` : 'Start belum dicatat');
+  // show fullscreen AR overlay
+  openARFullscreen();
+  // set selected as this object (but do not force start if not recorded)
+  selected = obj;
 }
 
-closeModelBtn.addEventListener('click', ()=> modelModal.classList.add('hidden'));
+/* open AR fullscreen: hide map & UI that could obstruct, show ar-fullscreen */
+function openARFullscreen(){
+  // hide elements that should not cover AR
+  document.querySelectorAll('.hide-when-ar').forEach(el=>el.style.opacity = '0');
+  document.querySelector('.app-shell').style.filter = 'blur(0.6px)';
+  arFullscreen.style.display = 'flex';
+  arFullscreen.setAttribute('aria-hidden','false');
+  // request full-screen for immersive feel (best-effort)
+  try { document.documentElement.requestFullscreen?.(); } catch(e){}
+}
 
-/* ========== GEOLOCATION PROMISE ========== */
+/* close AR */
+function closeARFullscreen(){
+  arFullscreen.style.display = 'none';
+  document.querySelectorAll('.hide-when-ar').forEach(el=>el.style.opacity = '');
+  document.querySelector('.app-shell').style.filter = '';
+  arFullscreen.setAttribute('aria-hidden','true');
+  try { if(document.fullscreenElement) document.exitFullscreen?.(); } catch(e){}
+}
 
-function getCurrentPositionPromise(options){
+/* button events */
+exitArBtn.addEventListener('click', ()=> closeARFullscreen());
+document.getElementById('refresh-csv').addEventListener('click', loadCSV);
+openMapBtn.addEventListener('click', ()=> {
+  // scroll to map
+  document.getElementById('student-map').scrollIntoView({behavior:'smooth'});
+});
+centerMeBtn.addEventListener('click', ()=> {
+  if(currentPosition && map) map.setView([currentPosition.lat, currentPosition.lng], 17);
+});
+
+/* Sampai handlers (both floating and AR top) */
+btnSampaiFloating.addEventListener('click', doSampai);
+arSampaiBtn.addEventListener('click', ()=>{
+  doSampai().then(()=> closeARFullscreen());
+});
+
+/* doSampai: capture current location as END -> compute distance & emission */
+async function doSampai(){
+  if(!selected || !selected.startRecorded){
+    alert('Belum ada objek yang dipilih & start belum tercatat.');
+    return;
+  }
+  statusEl.textContent = 'Mencatat lokasi sampai...';
+  try{
+    const pos = await getCurrentPosition({ enableHighAccuracy:true, timeout:12000 });
+    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() };
+    // compute distance
+    const meters = distanceMeters(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
+    const km = meters / 1000;
+    const vehicle = vehicleSelect.value || 'mobil';
+    const factor = EMISSION_FACTORS[vehicle] || EMISSION_FACTORS.mobil;
+    const grams = km * factor;
+    const kilos = grams / 1000;
+    // update UI
+    lastSummary.textContent = `${selected.title} → ${vehicle}`;
+    lastDistance.textContent = `${km.toFixed(3)} km`;
+    lastEmission.textContent = `${kilos.toFixed(3)} kg CO₂`;
+    statusEl.textContent = `Selesai — ${km.toFixed(3)} km • ${kilos.toFixed(3)} kg CO₂`;
+    // place end marker and polyline
+    if(map){
+      if(leafletMarkers['end']) map.removeLayer(leafletMarkers['end']);
+      leafletMarkers['end'] = L.marker([endPoint.lat, endPoint.lng]).addTo(map).bindPopup('Sampai');
+      if(leafletMarkers['route']) map.removeLayer(leafletMarkers['route']);
+      const pl = L.polyline([[selected.lat, selected.lng],[endPoint.lat, endPoint.lng]], { color:'#7c3aed' }).addTo(map);
+      leafletMarkers['route'] = pl;
+      map.fitBounds(pl.getBounds(), { padding:[40,40] });
+    }
+    return { meters, km, grams, kilos };
+  }catch(err){
+    alert('Gagal mencatat lokasi sampai — aktifkan izin lokasi.');
+    console.error(err);
+    statusEl.textContent = 'Gagal mencatat sampai';
+  }
+}
+
+/* geolocation helper (promise) */
+function getCurrentPosition(opts){
   return new Promise((resolve,reject)=>{
-    if(!navigator.geolocation) return reject(new Error('Geolocation not supported'));
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    if(!navigator.geolocation) return reject(new Error('Geolocation tidak tersedia'));
+    navigator.geolocation.getCurrentPosition(resolve, reject, opts);
   });
 }
 
-/* ========== MAP / MARKERS ========== */
-
-function initMap(){
-  map = L.map('student-map', { zoomControl:false }).setView([0,0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-}
-
-function placeMarker(obj){
-  // remove existing marker for id
-  if(leafletMarkers[obj.id]){
-    map.removeLayer(leafletMarkers[obj.id]);
-  }
-  const m = L.marker([obj.lat, obj.lng]).addTo(map).bindPopup(`<b>${obj.title}</b><br>Start`);
-  leafletMarkers[obj.id] = m;
-}
-
-/* ========== CAMERA START ========== */
+/* start camera preview (for mobile quick preview) */
 async function startCamera(){
   if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
     try{
@@ -292,124 +431,42 @@ async function startCamera(){
       cameraVideo.srcObject = stream;
     }catch(err){
       console.warn('camera error', err);
-      // fallthrough - camera optional
     }
   }
 }
 
-/* ========== Sampai (record end) & calculate emission ========== */
-
-btnSampai.addEventListener('click', async ()=>{
-  if(!selected || !selected.startRecorded){
-    alert('Belum ada objek yang dipilih / start belum dicatat.');
-    return;
-  }
-  statusEl.textContent = 'Mencatat lokasi sampai...';
-  try{
-    const pos = await getCurrentPositionPromise({ enableHighAccuracy:true, timeout:10000 });
-    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() };
-    // place end marker
-    if(leafletMarkers['end']) { map.removeLayer(leafletMarkers['end']); }
-    leafletMarkers['end'] = L.marker([endPoint.lat, endPoint.lng], { icon: L.divIcon({ className:'', html:'<div class="p-1 bg-green-400 rounded-full"></div>', iconSize:[16,16] }) }).addTo(map).bindPopup('Sampai');
-    // compute distance
-    const meters = distanceMeters(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
-    const km = meters / 1000;
-    const vehicle = vehicleSelect.value || 'mobil';
-    const factor = EMISSION_FACTORS[vehicle] || EMISSION_FACTORS.mobil;
-    const gramsCO2 = km * factor;
-    // show result
-    emissionResult.classList.remove('hidden');
-    emissionResult.innerHTML = `
-      <div><strong>Objek:</strong> ${selected.title}</div>
-      <div><strong>Jarak:</strong> ${km.toFixed(3)} km (${Math.round(meters)} m)</div>
-      <div><strong>Kendaraan:</strong> ${vehicle}</div>
-      <div class="mt-2 text-lg font-semibold">Estimasi Emisi: ${ (gramsCO2/1000).toFixed(3) } kg CO₂</div>
-    `;
-    statusEl.textContent = 'Selesai: hasil emisi ditampilkan.';
-    // draw line on map
-    if(map){
-      if(leafletMarkers['route']) map.removeLayer(leafletMarkers['route']);
-      const poly = L.polyline([[selected.lat, selected.lng],[endPoint.lat,endPoint.lng]], { color:'#4f46e5' }).addTo(map);
-      leafletMarkers['route'] = poly;
-      map.fitBounds(poly.getBounds(), { padding:[40,40] });
-    }
-  }catch(err){
-    console.error(err);
-    alert('Gagal mencatat lokasi sampai. Pastikan izin lokasi diaktifkan.');
-    statusEl.textContent = 'Gagal mencatat lokasi sampai.';
-  }
-});
-
-/* ========== Keep AR object fixed relative to world coords ========== */
-/* We'll simulate a simple world-anchor indicator in the camera overlay: show a small label
-   at screen position mapped from bearing/distance. This remains fixed in world coords because
-   we use the stored lat/lng of the object (not camera-relative). */
-
-function updateAROverlay(){
-  arOverlay.innerHTML = '';
-  if(!currentPosition || !selected || !selected.startRecorded) return;
-  const dist = distanceMeters(currentPosition.lat, currentPosition.lng, selected.lat, selected.lng);
-  const bearing = calculateBearing(currentPosition.lat, currentPosition.lng, selected.lat, selected.lng);
-  // compute relative bearing from device heading if available
-  // Note: DeviceOrientationEvent alpha is not used here to keep implementation simple across browsers.
-  // We'll place element at top-center and show distance & static direction arrow.
-  const el = document.createElement('div');
-  el.style.position = 'absolute';
-  el.style.left = '50%';
-  el.style.top = '10%';
-  el.style.transform = 'translateX(-50%)';
-  el.style.pointerEvents = 'auto';
-  el.innerHTML = `
-    <div style="background:rgba(255,255,255,0.85); padding:8px 12px; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.12);">
-      <div style="font-weight:600">${selected.title}</div>
-      <div style="font-size:13px;color:#374151">${Math.round(dist)} m • bearing ${Math.round(bearing)}°</div>
-    </div>
-  `;
-  arOverlay.appendChild(el);
+/* Map init */
+function initMap(){
+  map = L.map('student-map', { zoomControl:true }).setView([0,0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
 }
 
-/* helper: bearing (deg) */
-function calculateBearing(lat1, lon1, lat2, lon2){
-  const toRad = v => v * Math.PI/180;
-  const toDeg = v => v * 180/Math.PI;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2);
-  const Δλ = toRad(lon2 - lon1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-  let θ = Math.atan2(y,x);
-  θ = (toDeg(θ) + 360) % 360;
-  return θ;
+/* place marker for object start */
+function placeMarker(obj){
+  if(!map) return;
+  if(leafletMarkers[obj.id]) map.removeLayer(leafletMarkers[obj.id]);
+  leafletMarkers[obj.id] = L.marker([obj.lat, obj.lng]).addTo(map).bindPopup(`<b>${obj.title}</b><br>Start`);
 }
 
-/* track current position for overlay & map updates */
-function startTrackingPosition(){
+/* watch position - update currentPosition */
+function startPositionWatch(){
   if(!navigator.geolocation) return;
-  navigator.geolocation.watchPosition((p)=>{
+  navigator.geolocation.watchPosition(p=>{
     currentPosition = { lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy };
-    // update map center modestly
-    if(map && (!selected || !selected.startRecorded)) {
-      map.setView([currentPosition.lat, currentPosition.lng], 17);
-    }
-    // update overlay anchor
-    updateAROverlay();
-  }, (err)=>{
-    console.warn('watchPosition err',err);
-  }, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
+    // if no selection, center map to user
+    if(map && (!selected || !selected.startRecorded)) map.setView([currentPosition.lat, currentPosition.lng], 17);
+  }, err=> console.warn('watch error',err), { enableHighAccuracy:true, maximumAge:1500, timeout:8000 });
 }
 
-/* start everything */
+/* boot */
 (async function boot(){
   initMap();
-  await loadCSVAndPopulate();
+  await loadCSV();
   await startCamera();
-  startTrackingPosition();
-  statusEl.textContent = 'Siap. Pilih objek dari daftar.';
-  // open map toggle
-  btnViewMap.addEventListener('click', ()=> {
-    map.invalidateSize();
-    // scroll to map area
-    studentMapEl.scrollIntoView({behavior:'smooth'});
-  });
+  startPositionWatch();
+  statusEl.textContent = 'Siap — pilih objek untuk mulai.';
 })();
 
 </script>
