@@ -2,32 +2,116 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GeoEmisi AR — Simulasi Jejak Karbon (Auto Kamera)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>GeoEmisi AR — Simulasi Jejak Karbon</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Poppins', sans-serif; margin: 0; overflow: hidden; background: #000; }
-    .overlay-ui { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 10px 14px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); z-index: 20; width: calc(100% - 36px); max-width: 460px; }
-    .overlay-ui select, .overlay-ui button { font-size: 14px; }
-    .hud-info { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 8px; z-index: 20; text-align: center; }
-    .status-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; vertical-align:middle; }
-    .camera-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
-    .camera-feed { width: 100%; height: 100%; object-fit: cover; }
-    .ar-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 15; }
-    .ar-object { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; }
+    * {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    body { 
+      font-family: 'Poppins', sans-serif; 
+      margin: 0; 
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      position: fixed;
+      width: 100%;
+      height: 100%;
+    }
+    
+    .overlay-ui { 
+      position: fixed; 
+      bottom: 8px; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      background: rgba(255,255,255,0.98); 
+      padding: 12px 16px; 
+      border-radius: 16px; 
+      box-shadow: 0 8px 25px rgba(0,0,0,0.2); 
+      z-index: 20; 
+      width: calc(100% - 32px); 
+      max-width: 400px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
+    .hud-info { 
+      position: fixed; 
+      top: env(safe-area-inset-top, 12px); 
+      left: 50%; 
+      transform: translateX(-50%); 
+      background: rgba(255,255,255,0.98); 
+      padding: 10px 16px; 
+      border-radius: 12px; 
+      z-index: 20; 
+      text-align: center;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
+    .status-dot { 
+      display:inline-block; 
+      width:10px; 
+      height:10px; 
+      border-radius:50%; 
+      margin-right:8px; 
+      vertical-align:middle; 
+    }
+    
+    .camera-container { 
+      position: fixed; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%; 
+      z-index: 10; 
+    }
+    
+    .camera-feed { 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror for front camera */
+    }
+    
+    .ar-overlay { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      width: 100%; 
+      height: 100%; 
+      pointer-events: none; 
+      z-index: 15; 
+    }
+    
+    .ar-object { 
+      position: absolute; 
+      transform: translate(-50%, -50%); 
+      pointer-events: auto;
+      touch-action: none;
+    }
+    
     .model-container { 
-      width: 100px; 
-      height: 100px; 
-      background: rgba(59, 130, 246, 0.8); 
-      border-radius: 10px; 
+      width: 120px; 
+      height: 120px; 
+      background: rgba(59, 130, 246, 0.9); 
+      border-radius: 12px; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
       color: white;
       font-weight: bold;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      font-size: 14px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+      border: 2px solid white;
     }
+    
     .loading-screen {
       position: fixed;
       top: 0;
@@ -41,19 +125,70 @@
       justify-content: center;
       color: white;
       z-index: 100;
+      padding: 20px;
+      text-align: center;
     }
+    
     .spinner {
-      width: 40px;
-      height: 40px;
+      width: 50px;
+      height: 50px;
       border: 4px solid rgba(255,255,255,0.3);
       border-radius: 50%;
       border-top-color: white;
       animation: spin 1s linear infinite;
-      margin-bottom: 10px;
+      margin-bottom: 20px;
     }
+    
+    .permission-btn {
+      background: white;
+      color: #2563eb;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 25px;
+      font-weight: 600;
+      margin-top: 20px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+    
+    .btn-mobile {
+      padding: 14px 16px;
+      font-size: 16px; /* Minimum font size for mobile */
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      min-height: 48px; /* Minimum touch target size */
+    }
+    
+    select {
+      font-size: 16px !important; /* Prevent zoom on iOS */
+      padding: 12px !important;
+      min-height: 48px;
+    }
+    
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    
+    /* Safe area support for notch phones */
+    .safe-top {
+      padding-top: env(safe-area-inset-top);
+    }
+    
+    .safe-bottom {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    /* Error states */
+    .error-screen {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .warning-screen {
+      background: #d97706;
+      color: white;
     }
   </style>
 </head>
@@ -61,45 +196,65 @@
   <!-- Loading Screen -->
   <div id="loading-screen" class="loading-screen">
     <div class="spinner"></div>
-    <p id="loading-status">Menyiapkan kamera dan GPS...</p>
+    <h2 class="text-xl font-bold mb-2">GeoEmisi AR</h2>
+    <p id="loading-status" class="text-lg mb-4">Menyiapkan aplikasi...</p>
+    <button id="retry-btn" class="permission-btn hidden" onclick="retryInitialization()">Coba Lagi</button>
+    <button id="camera-permission-btn" class="permission-btn hidden" onclick="requestCameraPermission()">Izinkan Kamera</button>
   </div>
 
   <!-- Camera View -->
   <div class="camera-container">
-    <video id="camera-feed" class="camera-feed" autoplay playsinline></video>
+    <video id="camera-feed" class="camera-feed" autoplay playsinline muted></video>
     <div class="ar-overlay" id="ar-overlay"></div>
   </div>
 
   <!-- HUD GPS Status -->
-  <div class="hud-info" id="gpsHud">
+  <div class="hud-info safe-top">
     <span id="gpsDot" class="status-dot" style="background:#f59e0b"></span>
     <span id="gpsText">📡 Mendeteksi lokasi...</span>
   </div>
 
   <!-- Panel Kontrol -->
-  <div class="overlay-ui" role="region" aria-label="Kontrol GeoEmisi">
-    <div class="flex flex-col gap-2">
+  <div class="overlay-ui safe-bottom">
+    <div class="flex flex-col gap-3">
       <div>
-        <label class="text-xs text-gray-600">Pilih Objek (CSV: nama, url)</label>
-        <select id="objectSelect" class="w-full border rounded px-2 py-1" aria-label="Pilih objek"></select>
+        <label class="text-xs text-gray-600 block mb-2">Pilih Objek AR</label>
+        <select id="objectSelect" class="w-full border-2 border-gray-200 rounded-xl px-3 py-3 bg-white">
+          <option value="">-- pilih objek --</option>
+        </select>
       </div>
+      
       <div class="flex gap-2">
-        <button id="btnPlace" class="flex-1 bg-blue-600 text-white rounded px-3 py-2">Letakkan Objek</button>
-        <button id="btnStart" class="flex-1 bg-emerald-500 text-white rounded px-3 py-2">Start</button>
-        <button id="btnFinish" class="flex-1 bg-red-500 text-white rounded px-3 py-2" disabled>Finish</button>
+        <button id="btnPlace" class="flex-1 bg-blue-600 text-white rounded-xl btn-mobile">
+          Letakkan
+        </button>
+        <button id="btnStart" class="flex-1 bg-emerald-500 text-white rounded-xl btn-mobile">
+          Start
+        </button>
+        <button id="btnFinish" class="flex-1 bg-red-500 text-white rounded-xl btn-mobile" disabled>
+          Finish
+        </button>
       </div>
+      
       <div>
-        <label class="text-xs text-gray-600">Mode Transportasi</label>
-        <select id="transportMode" class="w-full border rounded px-2 py-1" aria-label="Mode transportasi">
+        <label class="text-xs text-gray-600 block mb-2">Mode Transportasi</label>
+        <select id="transportMode" class="w-full border-2 border-gray-200 rounded-xl px-3 py-3 bg-white">
           <option value="motor">Motor Pribadi</option>
           <option value="mobil">Mobil Pribadi</option>
           <option value="umum">Angkutan Umum</option>
           <option value="truk">Truk</option>
         </select>
       </div>
-      <div class="text-sm text-gray-800 mt-2">
-        <div>Jarak tempuh: <strong id="distVal">0.00</strong> km</div>
-        <div>Emisi CO₂: <strong id="emisVal">0.00</strong> kg</div>
+      
+      <div class="text-sm text-gray-800 mt-2 bg-gray-50 rounded-xl p-3">
+        <div class="flex justify-between items-center mb-2">
+          <span>Jarak tempuh:</span>
+          <strong id="distVal" class="text-blue-600">0.00 km</strong>
+        </div>
+        <div class="flex justify-between items-center">
+          <span>Emisi CO₂:</span>
+          <strong id="emisVal" class="text-red-600">0.00 kg</strong>
+        </div>
       </div>
     </div>
   </div>
@@ -116,17 +271,27 @@
     let simDist = 0;
     let cameraStream = null;
     let currentModel = null;
+    let initializationAttempts = 0;
 
     // Parse CSV data
     function parseCSV(text) {
-      const lines = text.trim().split('\n');
-      const headers = lines[0].split(',').map(h => h.toLowerCase());
-      const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nama'));
-      const urlIdx = headers.findIndex(h => h.includes('url'));
-      return lines.slice(1).map(l => {
-        const cols = l.split(',');
-        return { name: cols[nameIdx]?.trim(), url: cols[urlIdx]?.trim() };
-      });
+      try {
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.toLowerCase().trim());
+        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nama'));
+        const urlIdx = headers.findIndex(h => h.includes('url'));
+        
+        return lines.slice(1).map(l => {
+          const cols = l.split(',').map(c => c.trim());
+          return { 
+            name: cols[nameIdx] || 'Unnamed', 
+            url: cols[urlIdx] || '' 
+          };
+        }).filter(obj => obj.url); // Filter out objects without URLs
+      } catch (e) {
+        console.error('CSV parsing error:', e);
+        return [];
+      }
     }
 
     // Load CSV data
@@ -136,21 +301,26 @@
         const res = await fetch(csvUrl);
         const text = await res.text();
         objects = parseCSV(text);
+        
         const sel = document.getElementById('objectSelect');
         sel.innerHTML = '<option value="">-- pilih objek --</option>';
-        objects.forEach((o,i)=>{
+        
+        objects.forEach((o, i) => {
           const opt = document.createElement('option'); 
-          opt.value=i; 
-          opt.textContent=o.name; 
+          opt.value = i; 
+          opt.textContent = o.name; 
           sel.appendChild(opt);
         });
+        
+        return objects.length > 0;
       } catch (e) {
-        alert('Gagal memuat CSV');
-        console.error(e);
+        console.error('Failed to load CSV:', e);
+        updateLoadingStatus('Gagal memuat data objek', true);
+        return false;
       }
     }
 
-    // Start camera
+    // Start camera with mobile-friendly approach
     async function startCamera() {
       try {
         updateLoadingStatus('Mengakses kamera...');
@@ -159,41 +329,83 @@
           throw new Error('Browser tidak mendukung akses kamera');
         }
 
-        // Request camera access
-        cameraStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          } 
-        });
-
-        const videoElement = document.getElementById('camera-feed');
-        videoElement.srcObject = cameraStream;
-        
-        // Hide loading screen when video starts playing
-        videoElement.onloadeddata = () => {
-          setTimeout(() => {
-            document.getElementById('loading-screen').style.display = 'none';
-          }, 1000);
+        // Mobile-friendly constraints
+        const constraints = {
+          video: {
+            facingMode: 'environment', // Prefer rear camera
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
         };
 
+        cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const videoElement = document.getElementById('camera-feed');
+        
+        // Use event-based loading for mobile
+        return new Promise((resolve, reject) => {
+          videoElement.srcObject = cameraStream;
+          
+          videoElement.onloadedmetadata = () => {
+            videoElement.play().then(() => {
+              console.log('Camera started successfully');
+              resolve(true);
+            }).catch(reject);
+          };
+          
+          videoElement.onerror = reject;
+          
+          // Timeout fallback
+          setTimeout(() => {
+            if (videoElement.readyState >= 2) { // HAVE_CURRENT_DATA
+              resolve(true);
+            }
+          }, 2000);
+        });
+
       } catch (error) {
-        console.error('Error accessing camera:', error);
-        let errorMessage = 'Tidak dapat mengakses kamera: ';
+        console.error('Camera access error:', error);
+        
+        let errorMessage = 'Tidak dapat mengakses kamera';
+        let showPermissionButton = false;
         
         if (error.name === 'NotAllowedError') {
-          errorMessage += 'Izin kamera ditolak. Silakan izinkan akses kamera dan muat ulang halaman.';
+          errorMessage = 'Izin kamera ditolak. Tap tombol di bawah untuk mengizinkan.';
+          showPermissionButton = true;
         } else if (error.name === 'NotFoundError') {
-          errorMessage += 'Tidak ada kamera yang ditemukan.';
+          errorMessage = 'Kamera tidak ditemukan di perangkat ini';
         } else if (error.name === 'NotSupportedError') {
-          errorMessage += 'Browser tidak mendukung akses kamera.';
+          errorMessage = 'Browser tidak mendukung akses kamera';
+        } else if (error.name === 'NotReadableError') {
+          errorMessage = 'Kamera sedang digunakan aplikasi lain';
         } else {
-          errorMessage += error.message;
+          errorMessage = 'Error kamera: ' + error.message;
         }
         
-        updateLoadingStatus(errorMessage);
-        alert(errorMessage);
+        updateLoadingStatus(errorMessage, true);
+        if (showPermissionButton) {
+          document.getElementById('camera-permission-btn').classList.remove('hidden');
+        }
+        document.getElementById('retry-btn').classList.remove('hidden');
+        
+        return false;
+      }
+    }
+
+    // Request camera permission explicitly
+    async function requestCameraPermission() {
+      try {
+        document.getElementById('camera-permission-btn').classList.add('hidden');
+        updateLoadingStatus('Meminta izin kamera...');
+        
+        // Try to get permission without starting stream first
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        
+        // If permission granted, retry initialization
+        retryInitialization();
+      } catch (error) {
+        updateLoadingStatus('Izin kamera masih ditolak', true);
+        document.getElementById('camera-permission-btn').classList.remove('hidden');
       }
     }
 
@@ -210,79 +422,93 @@
       currentModel = document.createElement('div');
       currentModel.className = 'ar-object';
       currentModel.style.left = '50%';
-      currentModel.style.top = '50%';
+      currentModel.style.top = '40%'; // Position slightly higher for better visibility
       
-      // Create model content based on file type
+      // Create model content
+      const modelContainer = document.createElement('div');
+      modelContainer.className = 'model-container';
+      
       if (url.toLowerCase().includes('.glb') || url.toLowerCase().includes('.gltf')) {
-        // For 3D models, show a placeholder
-        const modelContainer = document.createElement('div');
-        modelContainer.className = 'model-container';
         modelContainer.textContent = '3D Model';
-        modelContainer.style.background = 'rgba(139, 69, 19, 0.8)';
-        currentModel.appendChild(modelContainer);
-      } else if (url.match(/\.(jpeg|jpg|gif|png)$/i)) {
-        // For images
+        modelContainer.style.background = 'rgba(139, 69, 19, 0.9)';
+      } else if (url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        // For images, create img element
+        modelContainer.innerHTML = '';
         const img = document.createElement('img');
         img.src = url;
-        img.style.width = '150px';
-        img.style.height = '150px';
+        img.style.width = '100%';
+        img.style.height = '100%';
         img.style.objectFit = 'cover';
         img.style.borderRadius = '10px';
-        img.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
         img.onerror = function() {
-          this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 24 24" fill="none" stroke="%234f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+          // Fallback if image fails to load
+          this.style.display = 'none';
+          const fallback = document.createElement('div');
+          fallback.textContent = '📷';
+          fallback.style.fontSize = '40px';
+          modelContainer.appendChild(fallback);
         };
-        currentModel.appendChild(img);
+        modelContainer.appendChild(img);
       } else {
-        // For other content types
-        const contentContainer = document.createElement('div');
-        contentContainer.className = 'model-container';
-        contentContainer.textContent = 'Object';
-        currentModel.appendChild(contentContainer);
+        modelContainer.textContent = 'Object';
+        modelContainer.style.background = 'rgba(59, 130, 246, 0.9)';
       }
       
+      currentModel.appendChild(modelContainer);
       overlay.appendChild(currentModel);
+      
+      // Add touch feedback
+      modelContainer.style.transition = 'transform 0.2s';
+      modelContainer.addEventListener('touchstart', () => {
+        modelContainer.style.transform = 'scale(0.95)';
+      });
+      
+      modelContainer.addEventListener('touchend', () => {
+        modelContainer.style.transform = 'scale(1)';
+      });
     }
 
     // Start location tracking
     function startWatch() {
-      if(!navigator.geolocation) {
+      if (!navigator.geolocation) {
         updateGPSStatus(false, '❌ GPS tidak didukung');
         return;
       }
       
       updateGPSStatus(false, '📡 Mendeteksi lokasi...');
+      
       watchId = navigator.geolocation.watchPosition(
         position => {
           currentPosition = {
             lat: position.coords.latitude, 
-            lng: position.coords.longitude
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy
           };
-          updateGPSStatus(true, '✅ GPS aktif');
           
-          if(simActive && simStartPos){
+          updateGPSStatus(true, `📍 GPS aktif (±${Math.round(currentPosition.accuracy)}m)`);
+          
+          if (simActive && simStartPos) {
             const d = haversine(simStartPos, currentPosition);
             simDist = d / 1000; // Convert meters to kilometers
-            document.getElementById('distVal').textContent = simDist.toFixed(2);
-            const mode = document.getElementById('transportMode').value;
-            const emisi = simDist * (emissionFactors[mode] || 0);
-            document.getElementById('emisVal').textContent = emisi.toFixed(2);
+            updateDistanceDisplay();
           }
         }, 
         error => {
           console.error('GPS Error:', error);
           let errorMsg = 'Gagal mendapatkan lokasi';
+          
           switch(error.code) {
             case error.PERMISSION_DENIED:
-              errorMsg = 'Izin lokasi ditolak';
+              errorMsg = 'Izin lokasi ditolak. Aktifkan di pengaturan.';
               break;
             case error.POSITION_UNAVAILABLE:
-              errorMsg = 'Informasi lokasi tidak tersedia';
+              errorMsg = 'Lokasi tidak tersedia';
               break;
             case error.TIMEOUT:
-              errorMsg = 'Permintaan lokasi timeout';
+              errorMsg = 'Timeout mendapatkan lokasi';
               break;
           }
+          
           updateGPSStatus(false, errorMsg);
         }, 
         {
@@ -293,8 +519,16 @@
       );
     }
 
+    // Update distance and emission display
+    function updateDistanceDisplay() {
+      document.getElementById('distVal').textContent = simDist.toFixed(2);
+      const mode = document.getElementById('transportMode').value;
+      const emisi = simDist * (emissionFactors[mode] || 0);
+      document.getElementById('emisVal').textContent = emisi.toFixed(2);
+    }
+
     // Update GPS status display
-    function updateGPSStatus(ok, text){
+    function updateGPSStatus(ok, text) {
       const dot = document.getElementById('gpsDot');
       const t = document.getElementById('gpsText');
       dot.style.background = ok ? '#16a34a' : '#f59e0b';
@@ -302,12 +536,21 @@
     }
 
     // Update loading status
-    function updateLoadingStatus(text) {
-      document.getElementById('loading-status').textContent = text;
+    function updateLoadingStatus(text, isError = false) {
+      const statusElement = document.getElementById('loading-status');
+      const loadingScreen = document.getElementById('loading-screen');
+      
+      statusElement.textContent = text;
+      
+      if (isError) {
+        loadingScreen.classList.add('error-screen');
+      } else {
+        loadingScreen.classList.remove('error-screen');
+      }
     }
 
     // Haversine distance calculation
-    function haversine(a, b){
+    function haversine(a, b) {
       const R = 6371000; // Earth radius in meters
       const toRad = x => x * Math.PI / 180;
       const dLat = toRad(b.lat - a.lat);
@@ -317,61 +560,143 @@
       
       const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
       const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
-      return R * c; // Return distance in meters
+      return R * c;
     }
 
-    // Event listeners
+    // Retry initialization
+    function retryInitialization() {
+      initializationAttempts++;
+      document.getElementById('retry-btn').classList.add('hidden');
+      document.getElementById('camera-permission-btn').classList.add('hidden');
+      
+      if (initializationAttempts >= 3) {
+        updateLoadingStatus('Gagal memulai aplikasi. Silakan refresh halaman.', true);
+        return;
+      }
+      
+      initApp();
+    }
+
+    // Initialize app
+    async function initApp() {
+      try {
+        updateLoadingStatus('Memulai aplikasi...');
+        
+        // Start camera first
+        const cameraSuccess = await startCamera();
+        if (!cameraSuccess) return;
+        
+        // Load CSV data
+        const csvSuccess = await loadCSV();
+        if (!csvSuccess) {
+          updateLoadingStatus('Gagal memuat data, menggunakan mode offline...');
+        }
+        
+        // Start GPS
+        startWatch();
+        
+        // Hide loading screen with delay for better UX
+        setTimeout(() => {
+          document.getElementById('loading-screen').style.display = 'none';
+        }, 1000);
+        
+      } catch (error) {
+        console.error('Initialization error:', error);
+        updateLoadingStatus('Error: ' + error.message, true);
+        document.getElementById('retry-btn').classList.remove('hidden');
+      }
+    }
+
+    // Event listeners with mobile optimizations
     document.getElementById('btnPlace').addEventListener('click', () => {
       const idx = document.getElementById('objectSelect').value;
-      if(idx === '') return alert('Pilih objek terlebih dahulu.');
+      if (idx === '') {
+        alert('Pilih objek terlebih dahulu.');
+        return;
+      }
       const obj = objects[idx];
       placeModel(obj.url);
     });
 
     document.getElementById('btnStart').addEventListener('click', () => {
-      if(!currentPosition) return alert('Menunggu GPS...');
+      if (!currentPosition) {
+        alert('Menunggu GPS aktif...');
+        return;
+      }
       simStartPos = {...currentPosition};
       simDist = 0;
       simActive = true;
       document.getElementById('btnStart').disabled = true;
       document.getElementById('btnFinish').disabled = false;
-      updateGPSStatus(true, '🟢 Simulasi dimulai — merekam posisi...');
+      updateGPSStatus(true, '🟢 Simulasi aktif...');
+      updateDistanceDisplay();
     });
 
     document.getElementById('btnFinish').addEventListener('click', () => {
-      if(!simActive) return alert('Simulasi belum dimulai');
+      if (!simActive) {
+        alert('Simulasi belum dimulai');
+        return;
+      }
       simActive = false;
       document.getElementById('btnStart').disabled = false;
       document.getElementById('btnFinish').disabled = true;
+      
       const mode = document.getElementById('transportMode').value;
       const emisi = simDist * (emissionFactors[mode] || 0);
-      document.getElementById('emisVal').textContent = emisi.toFixed(2);
+      
       updateGPSStatus(true, '✅ Simulasi selesai');
-      alert(`Simulasi selesai!\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg`);
+      
+      // Mobile-friendly alert
+      if (window.confirm(`Simulasi selesai!\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg\n\nOK untuk melanjutkan?`)) {
+        // User confirmed
+      }
     });
 
-    // Initialize app
-    async function initApp() {
-      try {
-        await startCamera();
-        await loadCSV();
-        startWatch();
-      } catch (error) {
-        console.error('Initialization error:', error);
-        updateLoadingStatus('Error inisialisasi: ' + error.message);
+    // Transport mode change
+    document.getElementById('transportMode').addEventListener('change', () => {
+      if (simActive) {
+        updateDistanceDisplay();
       }
+    });
+
+    // Prevent default touch behaviors
+    document.addEventListener('touchstart', function(e) {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    document.addEventListener('touchend', function(e) {
+      e.preventDefault();
+    }, { passive: false });
+
+    // Start the application when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initApp);
+    } else {
+      initApp();
     }
 
-    // Start the application
-    document.addEventListener('DOMContentLoaded', initApp);
-
-    // Clean up when page closes
+    // Clean up
     window.addEventListener('beforeunload', () => {
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
       }
       if (watchId) {
         navigator.geolocation.clearWatch(watchId);
+      }
+    });
+
+    // Handle page visibility changes (for mobile)
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // Page is hidden, pause if needed
+      } else {
+        // Page is visible again
+        if (cameraStream) {
+          const video = document.getElementById('camera-feed');
+          video.play().catch(console.error);
+        }
       }
     });
   </script>
