@@ -79,7 +79,6 @@
       width: 100%; 
       height: 100%; 
       object-fit: cover;
-      transform: scaleX(-1); /* Mirror for front camera */
     }
     
     .ar-overlay { 
@@ -92,34 +91,89 @@
       z-index: 15; 
     }
     
-    .ar-object { 
-      position: absolute; 
-      transform: translate(-50%, -50%); 
+    /* WORLD-ANCHORED AR OBJECT */
+    .world-object { 
+      position: absolute;
+      transform-style: preserve-3d;
       pointer-events: auto;
-      touch-action: none;
+      transition: transform 0.1s;
+      will-change: transform;
     }
     
-    .model-container { 
-      width: 150px; 
-      height: 150px; 
-      background: rgba(59, 130, 246, 0.9); 
-      border-radius: 12px; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      color: white;
-      font-weight: bold;
-      font-size: 14px;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-      border: 2px solid white;
+    .object-content {
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
     }
     
-    .model-viewer-container {
+    .model-viewer-3d {
+      width: 300px;
+      height: 300px;
+      background: transparent;
+    }
+    
+    .image-object {
+      max-width: 400px;
+      max-height: 400px;
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+      border: 3px solid white;
+    }
+    
+    .placeholder-object {
       width: 200px;
       height: 200px;
-      background: transparent;
-      border-radius: 12px;
-      overflow: hidden;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+      border: 3px solid white;
+      text-align: center;
+      padding: 10px;
+    }
+    
+    .object-label {
+      position: absolute;
+      top: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    
+    .object-distance {
+      position: absolute;
+      bottom: -35px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(59, 130, 246, 0.9);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .ground-marker {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background: radial-gradient(circle, rgba(34,197,94,0.8) 0%, rgba(34,197,94,0) 70%);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      animation: pulse 2s infinite;
+      pointer-events: none;
     }
     
     .loading-screen {
@@ -181,7 +235,19 @@
       100% { transform: rotate(360deg); }
     }
     
-    /* Safe area support for notch phones */
+    @keyframes pulse {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+      50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.7; }
+      100% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+    }
+    
+    @keyframes float {
+      0% { transform: translate(-50%, -50%) translateY(0px); }
+      50% { transform: translate(-50%, -50%) translateY(-10px); }
+      100% { transform: translate(-50%, -50%) translateY(0px); }
+    }
+    
+    /* Safe area support */
     .safe-top {
       padding-top: env(safe-area-inset-top);
     }
@@ -190,29 +256,34 @@
       padding-bottom: env(safe-area-inset-bottom);
     }
     
-    /* Error states */
     .error-screen {
       background: #dc2626;
       color: white;
     }
-    
-    .warning-screen {
-      background: #d97706;
-      color: white;
-    }
 
-    /* Object label */
-    .object-label {
-      position: absolute;
-      bottom: -30px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.7);
-      color: white;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 12px;
-      white-space: nowrap;
+    /* Placement controls */
+    .placement-controls {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .placement-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.95);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      backdrop-filter: blur(10px);
+      font-size: 20px;
     }
   </style>
 </head>
@@ -230,6 +301,16 @@
   <div class="camera-container">
     <video id="camera-feed" class="camera-feed" autoplay playsinline muted></video>
     <div class="ar-overlay" id="ar-overlay"></div>
+    
+    <!-- Placement Controls -->
+    <div class="placement-controls">
+      <button id="btnMoveLeft" class="placement-btn">⬅️</button>
+      <button id="btnMoveRight" class="placement-btn">➡️</button>
+      <button id="btnMoveUp" class="placement-btn">⬆️</button>
+      <button id="btnMoveDown" class="placement-btn">⬇️</button>
+      <button id="btnScaleUp" class="placement-btn">➕</button>
+      <button id="btnScaleDown" class="placement-btn">➖</button>
+    </div>
   </div>
 
   <!-- HUD GPS Status -->
@@ -250,7 +331,7 @@
       
       <div class="flex gap-2">
         <button id="btnPlace" class="flex-1 bg-blue-600 text-white rounded-xl btn-mobile">
-          Letakkan
+          Letakkan di Tanah
         </button>
         <button id="btnStart" class="flex-1 bg-emerald-500 text-white rounded-xl btn-mobile">
           Start
@@ -280,6 +361,10 @@
           <strong id="emisVal" class="text-red-600">0.00 kg</strong>
         </div>
       </div>
+      
+      <div class="text-xs text-gray-500 text-center mt-2">
+        Arahkan kamera ke tanah, lalu tap "Letakkan di Tanah"
+      </div>
     </div>
   </div>
 
@@ -294,9 +379,25 @@
     let simStartPos = null;
     let simDist = 0;
     let cameraStream = null;
-    let currentModel = null;
+    let currentObject = null;
     let currentObjectName = '';
     let initializationAttempts = 0;
+    
+    // AR World State
+    let arWorldState = {
+      objects: [],
+      groundPlane: null,
+      deviceOrientation: { alpha: 0, beta: 0, gamma: 0 },
+      screenCenter: { x: 0, y: 0 }
+    };
+    
+    // Object placement state
+    let placementState = {
+      isPlacing: false,
+      currentPosition: { x: 50, y: 50 }, // % based coordinates
+      currentScale: 1.0,
+      baseSize: 300
+    };
 
     // Parse CSV data
     function parseCSV(text) {
@@ -340,11 +441,11 @@
         return objects.length > 0;
       } catch (e) {
         console.error('Failed to load CSV:', e);
-        // Use fallback objects if CSV fails
+        // Fallback objects
         objects = [
           { name: "Pohon 3D", url: "https://cdn.glitch.global/7c71a2b3-0d3e-4b0e-9b4a-5a5a5a5a5a5a/tree.glb" },
           { name: "Mobil Listrik", url: "https://cdn.glitch.global/7c71a2b3-0d3e-4b0e-9b4a-5a5a5a5a5a5a/electric-car.glb" },
-          { name: "Gambar Solar Panel", url: "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=150" }
+          { name: "Gambar Solar Panel", url: "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=400" }
         ];
         
         const sel = document.getElementById('objectSelect');
@@ -361,7 +462,7 @@
       }
     }
 
-    // Start camera with mobile-friendly approach
+    // Start camera
     async function startCamera() {
       try {
         updateLoadingStatus('Mengakses kamera...');
@@ -387,66 +488,51 @@
           
           videoElement.onloadedmetadata = () => {
             videoElement.play().then(() => {
-              console.log('Camera started successfully');
+              // Initialize screen center
+              arWorldState.screenCenter = {
+                x: videoElement.videoWidth / 2,
+                y: videoElement.videoHeight / 2
+              };
               resolve(true);
             }).catch(reject);
           };
           
           videoElement.onerror = reject;
           
-          setTimeout(() => {
-            if (videoElement.readyState >= 2) {
-              resolve(true);
-            }
-          }, 2000);
+          setTimeout(() => resolve(true), 2000);
         });
 
       } catch (error) {
         console.error('Camera access error:', error);
-        
-        let errorMessage = 'Tidak dapat mengakses kamera';
-        let showPermissionButton = false;
-        
-        if (error.name === 'NotAllowedError') {
-          errorMessage = 'Izin kamera ditolak. Tap tombol di bawah untuk mengizinkan.';
-          showPermissionButton = true;
-        } else if (error.name === 'NotFoundError') {
-          errorMessage = 'Kamera tidak ditemukan di perangkat ini';
-        } else if (error.name === 'NotSupportedError') {
-          errorMessage = 'Browser tidak mendukung akses kamera';
-        } else if (error.name === 'NotReadableError') {
-          errorMessage = 'Kamera sedang digunakan aplikasi lain';
-        } else {
-          errorMessage = 'Error kamera: ' + error.message;
-        }
-        
-        updateLoadingStatus(errorMessage, true);
-        if (showPermissionButton) {
-          document.getElementById('camera-permission-btn').classList.remove('hidden');
-        }
-        document.getElementById('retry-btn').classList.remove('hidden');
-        
+        handleCameraError(error);
         return false;
       }
     }
 
-    // Request camera permission explicitly
-    async function requestCameraPermission() {
-      try {
-        document.getElementById('camera-permission-btn').classList.add('hidden');
-        updateLoadingStatus('Meminta izin kamera...');
-        
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        retryInitialization();
-      } catch (error) {
-        updateLoadingStatus('Izin kamera masih ditolak', true);
+    function handleCameraError(error) {
+      let errorMessage = 'Tidak dapat mengakses kamera';
+      let showPermissionButton = false;
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Izin kamera ditolak. Tap tombol di bawah untuk mengizinkan.';
+        showPermissionButton = true;
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'Kamera tidak ditemukan di perangkat ini';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'Browser tidak mendukung akses kamera';
+      } else {
+        errorMessage = 'Error kamera: ' + error.message;
+      }
+      
+      updateLoadingStatus(errorMessage, true);
+      if (showPermissionButton) {
         document.getElementById('camera-permission-btn').classList.remove('hidden');
       }
+      document.getElementById('retry-btn').classList.remove('hidden');
     }
 
-    // Place 3D model in AR - FIXED VERSION
-    function placeModel(url, objectName) {
-      // JANGAN hapus model jika simulasi aktif, kecuali setelah finish
+    // Place object in WORLD SPACE (not screen space)
+    function placeObjectInWorld(url, objectName) {
       if (simActive) {
         alert('Tunggu simulasi selesai dulu sebelum mengganti objek!');
         return;
@@ -454,92 +540,217 @@
 
       const overlay = document.getElementById('ar-overlay');
       
-      // Remove existing model only if not in simulation
-      if (currentModel && !simActive) {
-        overlay.removeChild(currentModel);
-        currentModel = null;
-      }
+      // Clear existing objects
+      clearAllObjects();
       
-      // Create new model container
-      currentModel = document.createElement('div');
-      currentModel.className = 'ar-object';
-      currentModel.style.left = '50%';
-      currentModel.style.top = '40%';
+      // Create ground marker at screen center
+      createGroundMarker();
+      
+      // Create world-anchored object
+      currentObject = document.createElement('div');
+      currentObject.className = 'world-object';
+      currentObject.style.left = '50%';
+      currentObject.style.top = '50%';
+      currentObject.style.width = (placementState.baseSize * placementState.currentScale) + 'px';
+      currentObject.style.height = (placementState.baseSize * placementState.currentScale) + 'px';
       currentObjectName = objectName;
       
-      // Determine content type and create appropriate element
+      // Create object content based on type
+      const content = createObjectContent(url, objectName);
+      currentObject.appendChild(content);
+      
+      // Add object info
+      addObjectInfo(currentObject, objectName);
+      
+      overlay.appendChild(currentObject);
+      
+      // Enable placement mode
+      placementState.isPlacing = true;
+      updatePlacementControls();
+      
+      console.log('Object placed in world space:', objectName);
+    }
+
+    function createObjectContent(url, objectName) {
+      const content = document.createElement('div');
+      content.className = 'object-content';
+      
       if (url.toLowerCase().includes('.glb') || url.toLowerCase().includes('.gltf')) {
-        // For 3D models - use model-viewer
+        // 3D Model with model-viewer
         const modelViewer = document.createElement('model-viewer');
         modelViewer.src = url;
         modelViewer.alt = objectName;
         modelViewer.autoRotate = true;
         modelViewer.cameraControls = true;
         modelViewer.shadowIntensity = 1;
-        modelViewer.style.width = '200px';
-        modelViewer.style.height = '200px';
-        modelViewer.style.backgroundColor = 'transparent';
-        
-        const container = document.createElement('div');
-        container.className = 'model-viewer-container';
-        container.appendChild(modelViewer);
-        currentModel.appendChild(container);
+        modelViewer.className = 'model-viewer-3d';
+        modelViewer.style.width = '100%';
+        modelViewer.style.height = '100%';
+        content.appendChild(modelViewer);
         
       } else if (url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
-        // For images
+        // Image object
         const img = document.createElement('img');
         img.src = url;
         img.alt = objectName;
-        img.style.width = '150px';
-        img.style.height = '150px';
-        img.style.objectFit = 'cover';
-        img.style.borderRadius = '12px';
-        img.style.boxShadow = '0 8px 25px rgba(0,0,0,0.3)';
-        img.onerror = function() {
-          // Fallback if image fails to load
-          const fallback = document.createElement('div');
-          fallback.className = 'model-container';
-          fallback.innerHTML = '📷<div style="font-size:10px;margin-top:5px;">Gambar</div>';
-          currentModel.appendChild(fallback);
-        };
-        currentModel.appendChild(img);
+        img.className = 'image-object';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.onerror = createFallbackContent;
+        content.appendChild(img);
       } else {
-        // For other content types or invalid URLs
-        const container = document.createElement('div');
-        container.className = 'model-container';
-        container.innerHTML = '📦<div style="font-size:10px;margin-top:5px;">Object</div>';
-        currentModel.appendChild(container);
+        // Placeholder for other types
+        createFallbackContent(content);
       }
       
-      // Add object label
+      return content;
+    }
+
+    function createFallbackContent(container) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder-object';
+      placeholder.innerHTML = '🎁<div style="font-size:12px;margin-top:8px;">AR Object</div>';
+      container.appendChild(placeholder);
+    }
+
+    function addObjectInfo(objectElement, objectName) {
+      // Label
       const label = document.createElement('div');
       label.className = 'object-label';
       label.textContent = objectName;
-      currentModel.appendChild(label);
+      objectElement.appendChild(label);
       
-      overlay.appendChild(currentModel);
+      // Distance indicator
+      const distance = document.createElement('div');
+      distance.className = 'object-distance';
+      distance.textContent = 'Tap & drag untuk memindahkan';
+      objectElement.appendChild(distance);
       
-      // Add touch feedback
-      currentModel.style.transition = 'transform 0.2s';
-      currentModel.addEventListener('touchstart', () => {
-        currentModel.style.transform = 'translate(-50%, -50%) scale(0.95)';
-      });
-      
-      currentModel.addEventListener('touchend', () => {
-        currentModel.style.transform = 'translate(-50%, -50%) scale(1)';
-      });
-
-      console.log('Object placed:', objectName, 'URL:', url);
+      // Make object draggable
+      makeObjectDraggable(objectElement);
     }
 
-    // Clear AR object when simulation finishes
-    function clearARObject() {
+    function createGroundMarker() {
       const overlay = document.getElementById('ar-overlay');
-      if (currentModel) {
-        overlay.removeChild(currentModel);
-        currentModel = null;
-        currentObjectName = '';
+      const marker = document.createElement('div');
+      marker.className = 'ground-marker';
+      marker.style.left = '50%';
+      marker.style.top = '50%';
+      marker.id = 'ground-marker';
+      overlay.appendChild(marker);
+    }
+
+    function makeObjectDraggable(objectElement) {
+      let isDragging = false;
+      let startX, startY, initialX, initialY;
+      
+      objectElement.addEventListener('touchstart', (e) => {
+        if (!placementState.isPlacing) return;
+        
+        isDragging = true;
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        
+        const style = window.getComputedStyle(objectElement);
+        initialX = parseInt(style.left);
+        initialY = parseInt(style.top);
+        
+        e.preventDefault();
+      });
+      
+      objectElement.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
+        
+        const newX = initialX + (deltaX / window.innerWidth) * 100;
+        const newY = initialY + (deltaY / window.innerHeight) * 100;
+        
+        // Constrain to screen bounds
+        objectElement.style.left = Math.max(10, Math.min(90, newX)) + '%';
+        objectElement.style.top = Math.max(10, Math.min(90, newY)) + '%';
+        
+        // Update placement state
+        placementState.currentPosition.x = parseFloat(objectElement.style.left);
+        placementState.currentPosition.y = parseFloat(objectElement.style.top);
+        
+        e.preventDefault();
+      });
+      
+      objectElement.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+    }
+
+    // Placement control functions
+    function setupPlacementControls() {
+      document.getElementById('btnMoveLeft').addEventListener('click', () => moveObject(-5, 0));
+      document.getElementById('btnMoveRight').addEventListener('click', () => moveObject(5, 0));
+      document.getElementById('btnMoveUp').addEventListener('click', () => moveObject(0, -5));
+      document.getElementById('btnMoveDown').addEventListener('click', () => moveObject(0, 5));
+      document.getElementById('btnScaleUp').addEventListener('click', () => scaleObject(0.2));
+      document.getElementById('btnScaleDown').addEventListener('click', () => scaleObject(-0.2));
+    }
+
+    function moveObject(deltaX, deltaY) {
+      if (!currentObject || !placementState.isPlacing) return;
+      
+      placementState.currentPosition.x = Math.max(10, Math.min(90, placementState.currentPosition.x + deltaX));
+      placementState.currentPosition.y = Math.max(10, Math.min(90, placementState.currentPosition.y + deltaY));
+      
+      currentObject.style.left = placementState.currentPosition.x + '%';
+      currentObject.style.top = placementState.currentPosition.y + '%';
+    }
+
+    function scaleObject(delta) {
+      if (!currentObject || !placementState.isPlacing) return;
+      
+      placementState.currentScale = Math.max(0.3, Math.min(3, placementState.currentScale + delta));
+      
+      const size = placementState.baseSize * placementState.currentScale;
+      currentObject.style.width = size + 'px';
+      currentObject.style.height = size + 'px';
+    }
+
+    function updatePlacementControls() {
+      const controls = document.querySelector('.placement-controls');
+      controls.style.display = placementState.isPlacing ? 'flex' : 'none';
+    }
+
+    function clearAllObjects() {
+      const overlay = document.getElementById('ar-overlay');
+      overlay.innerHTML = '';
+      currentObject = null;
+      placementState.isPlacing = false;
+      updatePlacementControls();
+    }
+
+    function finalizeObjectPlacement() {
+      if (!currentObject) return;
+      
+      // Remove ground marker
+      const marker = document.getElementById('ground-marker');
+      if (marker) marker.remove();
+      
+      // Disable placement mode
+      placementState.isPlacing = false;
+      updatePlacementControls();
+      
+      // Update object label
+      const label = currentObject.querySelector('.object-label');
+      const distance = currentObject.querySelector('.object-distance');
+      
+      if (label) label.textContent = currentObjectName;
+      if (distance) {
+        distance.textContent = 'Diam di tanah';
+        distance.style.background = 'rgba(34, 197, 94, 0.9)';
       }
+      
+      console.log('Object placement finalized at:', placementState.currentPosition);
     }
 
     // Start location tracking
@@ -569,21 +780,7 @@
         }, 
         error => {
           console.error('GPS Error:', error);
-          let errorMsg = 'Gagal mendapatkan lokasi';
-          
-          switch(error.code) {
-            case error.PERMISSION_DENIED:
-              errorMsg = 'Izin lokasi ditolak. Aktifkan di pengaturan.';
-              break;
-            case error.POSITION_UNAVAILABLE:
-              errorMsg = 'Lokasi tidak tersedia';
-              break;
-            case error.TIMEOUT:
-              errorMsg = 'Timeout mendapatkan lokasi';
-              break;
-          }
-          
-          updateGPSStatus(false, errorMsg);
+          handleGPSError(error);
         }, 
         {
           enableHighAccuracy: true,
@@ -591,6 +788,24 @@
           timeout: 15000
         }
       );
+    }
+
+    function handleGPSError(error) {
+      let errorMsg = 'Gagal mendapatkan lokasi';
+      
+      switch(error.code) {
+        case error.PERMISSION_DENIED:
+          errorMsg = 'Izin lokasi ditolak. Aktifkan di pengaturan.';
+          break;
+        case error.POSITION_UNAVAILABLE:
+          errorMsg = 'Lokasi tidak tersedia';
+          break;
+        case error.TIMEOUT:
+          errorMsg = 'Timeout mendapatkan lokasi';
+          break;
+      }
+      
+      updateGPSStatus(false, errorMsg);
     }
 
     // Update distance and emission display
@@ -637,6 +852,20 @@
       return R * c;
     }
 
+    // Request camera permission
+    async function requestCameraPermission() {
+      try {
+        document.getElementById('camera-permission-btn').classList.add('hidden');
+        updateLoadingStatus('Meminta izin kamera...');
+        
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        retryInitialization();
+      } catch (error) {
+        updateLoadingStatus('Izin kamera masih ditolak', true);
+        document.getElementById('camera-permission-btn').classList.remove('hidden');
+      }
+    }
+
     // Retry initialization
     function retryInitialization() {
       initializationAttempts++;
@@ -661,10 +890,11 @@
         
         const csvSuccess = await loadCSV();
         if (!csvSuccess) {
-          updateLoadingStatus('Gagal memuat data, menggunakan mode offline...');
+          updateLoadingStatus('Menggunakan data offline...');
         }
         
         startWatch();
+        setupPlacementControls();
         
         setTimeout(() => {
           document.getElementById('loading-screen').style.display = 'none';
@@ -677,7 +907,7 @@
       }
     }
 
-    // Event listeners dengan logika yang diperbaiki
+    // Event listeners
     document.getElementById('btnPlace').addEventListener('click', () => {
       const idx = document.getElementById('objectSelect').value;
       if (idx === '') {
@@ -685,7 +915,7 @@
         return;
       }
       const obj = objects[idx];
-      placeModel(obj.url, obj.name);
+      placeObjectInWorld(obj.url, obj.name);
     });
 
     document.getElementById('btnStart').addEventListener('click', () => {
@@ -694,27 +924,30 @@
         return;
       }
       
-      if (!currentModel) {
+      if (!currentObject) {
         alert('Letakkan objek AR terlebih dahulu!');
         return;
       }
+      
+      // Finalize object placement before starting simulation
+      finalizeObjectPlacement();
       
       simStartPos = {...currentPosition};
       simDist = 0;
       simActive = true;
       document.getElementById('btnStart').disabled = true;
       document.getElementById('btnFinish').disabled = false;
-      document.getElementById('btnPlace').disabled = true; // Disable place button during simulation
+      document.getElementById('btnPlace').disabled = true;
       document.getElementById('objectSelect').disabled = true;
       
       updateGPSStatus(true, '🟢 Simulasi aktif...');
       updateDistanceDisplay();
       
-      // Update object label to show simulation status
-      const label = currentModel.querySelector('.object-label');
+      // Update object appearance during simulation
+      const label = currentObject.querySelector('.object-label');
       if (label) {
         label.textContent = `${currentObjectName} (Simulasi Aktif)`;
-        label.style.background = 'rgba(34, 197, 94, 0.8)';
+        label.style.background = 'rgba(34, 197, 94, 0.9)';
       }
     });
 
@@ -727,36 +960,20 @@
       const mode = document.getElementById('transportMode').value;
       const emisi = simDist * (emissionFactors[mode] || 0);
       
-      // Tampilkan hasil dan konfirmasi clear object
       if (window.confirm(`Simulasi selesai!\n\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg\n\nHapus objek AR?`)) {
-        clearARObject();
+        clearAllObjects();
       }
       
-      // Reset simulation state
       simActive = false;
       document.getElementById('btnStart').disabled = false;
       document.getElementById('btnFinish').disabled = true;
-      document.getElementById('btnPlace').disabled = false; // Enable place button again
+      document.getElementById('btnPlace').disabled = false;
       document.getElementById('objectSelect').disabled = false;
       
       updateGPSStatus(true, '✅ Simulasi selesai');
     });
 
-    // Transport mode change
-    document.getElementById('transportMode').addEventListener('change', () => {
-      if (simActive) {
-        updateDistanceDisplay();
-      }
-    });
-
-    // Prevent default touch behaviors
-    document.addEventListener('touchstart', function(e) {
-      if (e.touches.length > 1) {
-        e.preventDefault();
-      }
-    }, { passive: false });
-
-    // Start the application when DOM is ready
+    // Start the application
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initApp);
     } else {
@@ -770,14 +987,6 @@
       }
       if (watchId) {
         navigator.geolocation.clearWatch(watchId);
-      }
-    });
-
-    // Handle page visibility changes
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && cameraStream) {
-        const video = document.getElementById('camera-feed');
-        video.play().catch(console.error);
       }
     });
   </script>
