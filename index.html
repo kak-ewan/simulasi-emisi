@@ -3,470 +3,399 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>GeoEmisi AR — Fullscreen AR</title>
+<title>GeoEmisi AR — Kids Edition</title>
 
-<!-- TailwindCSS (CDN) for quick styling -->
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- Simple styles (no Tailwind) -->
+<style>
+  :root{
+    --bg:#e6f7ff;
+    --card:#ffffff;
+    --accent:#2b8cff;
+    --accent-2:#7bd389;
+    --muted:#5b6b7a;
+  }
+  html,body{height:100%; margin:0; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:#023047;}
+  .wrap{max-width:460px; margin:12px auto; padding:12px;}
+  h1{margin:0 0 6px 0; font-size:20px;}
+  p.lead{margin:0 0 12px 0; color:var(--muted); font-size:13px;}
+  .card{background:var(--card); border-radius:12px; padding:10px; box-shadow:0 6px 18px rgba(2,16,40,0.06); margin-bottom:10px;}
+  .row{display:flex; gap:8px; align-items:center;}
+  .big-btn{flex:1; background:var(--accent); color:white; border:none; padding:12px; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 6px 14px rgba(43,140,255,0.18);}
+  .ghost-btn{background:transparent; border:2px solid var(--accent); color:var(--accent); padding:10px; border-radius:10px; font-weight:700; cursor:pointer;}
+  .small{font-size:13px; color:var(--muted);}
+  #object-list{max-height:220px; overflow:auto; display:flex; flex-direction:column; gap:8px;}
+  .obj{display:flex; align-items:center; justify-content:space-between; padding:8px; border-radius:10px; background:linear-gradient(180deg, #fff, #f7fdff);}
+  .obj .title{font-weight:700;}
+  .controls{display:flex; gap:8px; margin-top:8px; align-items:center;}
+  select{padding:8px; border-radius:8px; border:1px solid #dbeffd;}
+  #map{height:150px; border-radius:10px; overflow:hidden; margin-top:8px;}
+  /* Camera preview */
+  #preview{height:320px; border-radius:12px; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; position:relative;}
+  #camera { width:100%; height:100%; object-fit:cover; }
+  .overlay-top{position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; pointer-events:none;}
+  .chip{background:rgba(255,255,255,0.9); padding:6px 8px; border-radius:999px; font-weight:700; pointer-events:auto;}
+  .floating-sampai{position:absolute; bottom:12px; left:50%; transform:translateX(-50%); pointer-events:auto;}
+  .emission{display:flex; gap:8px; align-items:center;}
+  .cloud{width:56px; height:56px; display:flex; align-items:center; justify-content:center; border-radius:999px; background:linear-gradient(180deg,#fff,#f0f8ff); box-shadow:0 6px 18px rgba(2,16,40,0.06);}
+  .result-big{font-size:18px; font-weight:800; color:#023047;}
+  .muted{color:var(--muted); font-size:13px;}
+  /* Fullscreen AR modal */
+  #ar-modal{position:fixed; inset:0; background:#000; display:none; z-index:9999; align-items:center; justify-content:center;}
+  #ar-topbar{position:absolute; top:12px; left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:none;}
+  .ar-btn{pointer-events:auto; background:rgba(255,255,255,0.9); padding:8px 10px; border-radius:10px; font-weight:800; border:none; cursor:pointer;}
+  .ar-sampai{background:var(--accent-2); color:white;}
+  /* responsive small */
+  @media (max-width:420px){ .wrap{padding:8px;} h1{font-size:18px;} }
+</style>
 
-<!-- Leaflet (OpenStreetMap) -->
+<!-- model-viewer -->
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 
-<!-- model-viewer for .glb & AR -->
-<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
-
-<style>
-  :root{
-    --bg:#071027;
-    --panel: rgba(255,255,255,0.04);
-    --muted: rgba(255,255,255,0.6);
-    --accent: #7c3aed;
-  }
-  html,body{height:100%; background:linear-gradient(180deg,#031226 0%, #071027 60%); color:#E6EEF8; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
-  .app-shell{max-width:1200px;margin:24px auto;padding:18px;}
-  .glass{background:var(--panel); backdrop-filter:blur(6px); border-radius:14px; box-shadow:0 8px 30px rgba(2,6,23,0.6); border:1px solid rgba(255,255,255,0.03);}
-  .floating-card{padding:12px;}
-  .btn {transition:all .18s cubic-bezier(.2,.9,.2,1); border-radius:10px; padding:8px 12px; font-weight:600;}
-  .btn-ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted);}
-  .btn-primary{background:linear-gradient(90deg,var(--accent),#4f46e5); color:white; box-shadow:0 8px 30px rgba(79,70,229,0.12);}
-  #camera-feed{width:100%; height:100%; object-fit:cover; display:block;}
-  /* AR fullscreen modal */
-  #ar-fullscreen{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; background:linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.25)); }
-  #ar-inner{ width:100%; height:100%; display:flex; flex-direction:column; }
-  .ar-top { display:flex; justify-content:space-between; gap:12px; padding:12px; align-items:center; }
-  .ar-controls { display:flex; gap:8px; align-items:center; }
-  model-viewer { width:100%; height:calc(100vh - 72px); background:transparent; }
-  .hide-when-ar{ transition:opacity .25s ease; }
-  .show { display:flex; }
-  .fade-in { animation:fadeIn .22s ease both; }
-  @keyframes fadeIn { from {opacity:0; transform:translateY(6px);} to {opacity:1; transform:none;} }
-  /* object list */
-  #object-list { max-height:56vh; overflow:auto; padding-right:6px; }
-  .obj-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border:1px solid rgba(255,255,255,0.02); }
-  .muted { color:var(--muted); font-size:13px; }
-  /* small map */
-  #student-map { height:260px; border-radius:10px; overflow:hidden; }
-  /* emission card */
-  .emission-card { padding:12px; border-radius:10px; background:linear-gradient(90deg, rgba(124,58,237,0.12), rgba(79,70,229,0.06)); color:white; }
-  /* responsive */
-  @media (max-width:900px){
-    .app-shell{margin:8px;}
-  }
-</style>
 </head>
 <body>
-  <div class="app-shell">
-    <div class="flex items-center justify-between mb-4">
+  <div class="wrap">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+      <div class="cloud" aria-hidden="true">
+        <!-- simple cloud icon -->
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19 17H6a4 4 0 010-8 5 5 0 019.9-1.2A3.5 3.5 0 0119 11.5 3.5 3.5 0 0119 17z" fill="#7dd3fc"/></svg>
+      </div>
       <div>
-        <h1 class="text-2xl font-bold">GeoEmisi AR</h1>
-        <div class="muted">Pilih objek → rekam lokasi start → lihat AR fullscreen → tekan "Sampai" untuk menghitung emisi.</div>
-      </div>
-      <div class="flex items-center gap-3">
-        <select id="vehicle-select" class="btn btn-ghost">
-          <option value="motor">Motor</option>
-          <option value="mobil" selected>Mobil</option>
-          <option value="truk">Truk</option>
-        </select>
-        <button id="btn-sampai-floating" class="btn btn-primary">Sampai</button>
+        <h1>GeoEmisi AR (Kids)</h1>
+        <p class="lead">Pilih objek, lihat di dunia nyata, ketuk <strong>Sampai</strong> untuk lihat emisi.</p>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <!-- Left: Camera preview + AR quick area -->
-      <div class="lg:col-span-2 glass floating-card relative">
-        <div class="flex items-center justify-between mb-3">
-          <div class="muted">Preview Kamera</div>
-          <div class="muted text-sm">AR mode akan fullscreen saat lihat objek</div>
-        </div>
+    <!-- camera preview -->
+    <div class="card" id="preview">
+      <video id="camera" autoplay playsinline muted></video>
 
-        <div id="camera-area" class="rounded-lg overflow-hidden" style="height:420px; position:relative;">
-          <video id="camera-feed" autoplay playsinline muted></video>
-
-          <!-- overlay UI on top of camera preview -->
-          <div style="position:absolute; inset:12px; pointer-events:none;">
-            <div style="display:flex; justify-content:flex-start; gap:8px;">
-              <div id="selected-chip" class="muted glass px-3 py-1 rounded-md hide-when-ar">Belum memilih objek</div>
-            </div>
-            <div style="position:absolute; right:12px; bottom:12px; pointer-events:auto;">
-              <button id="open-map-btn" class="btn btn-ghost hide-when-ar">Buka Peta</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="mt-3 flex items-center justify-between">
-          <div class="muted">Status: <span id="status">Memuat objek...</span></div>
-          <div class="flex gap-2">
-            <button id="refresh-csv" class="btn btn-ghost">Muat ulang CSV</button>
-            <button id="center-me" class="btn btn-ghost">Cari Saya</button>
-          </div>
+      <div class="overlay-top">
+        <div class="chip" id="chip-selected">Belum pilih</div>
+        <div style="display:flex; gap:8px;">
+          <button class="ghost-btn" id="btn-center" style="pointer-events:auto;">Saya</button>
+          <button class="ghost-btn" id="btn-refresh" style="pointer-events:auto;">Muat Ulang</button>
         </div>
       </div>
 
-      <!-- Right: List + Map + Emission -->
-      <div class="glass floating-card">
-        <div class="mb-3">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold">Daftar Objek</h3>
-            <div class="muted text-sm">CSV publik</div>
-          </div>
-        </div>
-
-        <div id="object-list" class="space-y-2 mb-3">
-          <!-- rows injected -->
-        </div>
-
-        <div class="mb-3">
-          <h4 class="font-semibold mb-2">Peta</h4>
-          <div id="student-map"></div>
-        </div>
-
-        <div class="emission-card">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="muted">Hasil Terakhir</div>
-              <div id="last-summary" class="font-semibold">Belum ada perhitungan</div>
-            </div>
-            <div class="text-right muted">
-              <div id="last-distance">— km</div>
-              <div id="last-emission">— kg CO₂</div>
-            </div>
-          </div>
-        </div>
-
+      <div class="floating-sampai">
+        <button id="btn-sampai" class="big-btn">Sampai ✅</button>
       </div>
     </div>
+
+    <!-- list + controls -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <div><strong>Pilih Kendaraan</strong><div class="muted">Pilih satu dulu</div></div>
+        <div>
+          <select id="vehicle">
+            <option value="motor">🛵 Motor</option>
+            <option value="mobil" selected>🚗 Mobil</option>
+            <option value="truk">🚚 Truk</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div class="small" style="margin-bottom:6px;"><strong>Daftar Objek</strong></div>
+        <div id="object-list" aria-live="polite"></div>
+      </div>
+
+      <div id="map" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- result -->
+    <div class="card row" style="justify-content:space-between; align-items:center;">
+      <div class="emission">
+        <div class="cloud" aria-hidden="true">
+          <!-- carbon cloud icon -->
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v10" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="17" r="3" fill="#a7f3d0"/></svg>
+        </div>
+        <div style="margin-left:8px;">
+          <div class="muted">Hasil Emisi</div>
+          <div id="result-text" class="result-big">Belum ada</div>
+        </div>
+      </div>
+
+      <div style="text-align:right;">
+        <div class="muted">Jarak</div>
+        <div id="result-distance" style="font-weight:800; font-size:18px;">-</div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- FULLSCREEN AR LAYER (hidden until open) -->
-  <div id="ar-fullscreen" aria-hidden="true">
-    <div id="ar-inner" class="fade-in">
-      <div class="ar-top glass">
-        <div class="flex items-center gap-3">
-          <button id="exit-ar" class="btn btn-ghost">Keluar</button>
-          <div id="ar-title" class="font-semibold">Objek AR</div>
-          <div class="muted" id="ar-sub">—</div>
-        </div>
-        <div class="ar-controls">
-          <button id="ar-sampai" class="btn btn-primary">Sampai</button>
-        </div>
+  <!-- Fullscreen AR modal (kamera fullscreen + model-viewer) -->
+  <div id="ar-modal" role="dialog" aria-hidden="true">
+    <!-- top controls -->
+    <div id="ar-topbar">
+      <button id="ar-exit" class="ar-btn">Keluar ✖</button>
+      <div style="display:flex; gap:8px;">
+        <button id="ar-sampai-btn" class="ar-btn ar-sampai">Sampai ✅</button>
       </div>
-
-      <!-- model-viewer - covers remaining area -->
-      <model-viewer id="model-viewer"
-                    camera-controls
-                    environment-image="neutral"
-                    shadow-intensity="1"
-                    interaction-prompt="auto"
-                    ar
-                    ar-modes="webxr scene-viewer quick-look"
-                    style="background:transparent;">
-      </model-viewer>
     </div>
+
+    <!-- model viewer fills screen -->
+    <model-viewer id="mv"
+      camera-controls
+      ar
+      ar-modes="webxr scene-viewer quick-look"
+      interaction-prompt="auto"
+      style="width:100vw; height:100vh; background:transparent;">
+    </model-viewer>
   </div>
 
 <script>
-/* =========================
-   GeoEmisi AR — Fullscreen AR
-   - CSV: only name + url(.glb)
-   - When user clicks "Pilih": record current geolocation as START (object's world coordinate)
-   - "Lihat Objek": open fullscreen AR (hide map/other UI). model-viewer handles AR placement on real ground.
-   - "Sampai" (in fullscreen AR or floating): record current geolocation as END, compute distance & emission
-   ========================= */
+/* GeoEmisi AR - Kids Edition
+   - CSV with name,url (glb)
+   - select -> record start (current geolocation)
+   - view (open AR fullscreen) -> user can place model on ground; AR modal hides other UI
+   - Sampai -> record end, compute distance & emission
+*/
 
-/* CONFIG */
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
-const EMISSION_FACTORS = { motor:120, mobil:200, truk:900 };
+// simple emission factors (g CO2 / km)
+const FACTORS = { motor:120, mobil:200, truk:900 };
 
-/* STATE */
-let items = [];           // {id, title, url, lat?, lng?, startRecorded}
+/* state */
+let items = [];            // {id,title,url,lat,lng,startRecorded}
 let selected = null;
 let startPoint = null;
 let endPoint = null;
-let currentPosition = null;
 
-/* UI refs */
-const statusEl = document.getElementById('status');
-const objectListEl = document.getElementById('object-list');
-const cameraVideo = document.getElementById('camera-feed');
-const modelViewer = document.getElementById('model-viewer');
-const arFullscreen = document.getElementById('ar-fullscreen');
-const arTitle = document.getElementById('ar-title');
-const arSub = document.getElementById('ar-sub');
-const exitArBtn = document.getElementById('exit-ar');
-const arSampaiBtn = document.getElementById('ar-sampai');
-const btnSampaiFloating = document.getElementById('btn-sampai-floating');
-const vehicleSelect = document.getElementById('vehicle-select');
-const lastSummary = document.getElementById('last-summary');
-const lastDistance = document.getElementById('last-distance');
-const lastEmission = document.getElementById('last-emission');
-const selectedChip = document.getElementById('selected-chip');
-const refreshCsvBtn = document.getElementById('refresh-csv');
-const centerMeBtn = document.getElementById('center-me');
-const openMapBtn = document.getElementById('open-map-btn');
+/* ui refs */
+const objectList = document.getElementById('object-list');
+const chipSelected = document.getElementById('chip-selected');
+const mv = document.getElementById('mv');
+const arModal = document.getElementById('ar-modal');
+const arExit = document.getElementById('ar-exit');
+const arSampaiBtn = document.getElementById('ar-sampai-btn');
+const btnSampai = document.getElementById('btn-sampai');
+const vehicle = document.getElementById('vehicle');
+const resultText = document.getElementById('result-text');
+const resultDistance = document.getElementById('result-distance');
+const btnRefresh = document.getElementById('btn-refresh');
+const btnCenter = document.getElementById('btn-center');
 
-/* MAP */
+const cameraEl = document.getElementById('camera');
+
+/* map init */
 let map = null;
-let leafletMarkers = {};
+let markers = {};
+function initMap(){
+  map = L.map('map', { zoomControl:false }).setView([0,0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'&copy; OpenStreetMap' }).addTo(map);
+}
 
-/* UTIL: parse CSV (name/url) robustly */
+/* parse csv (simple) */
 function parseCSV(text){
-  const lines = text.trim().split('\n').filter(Boolean);
-  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-  const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nama') || h.includes('title'));
-  const urlIdx = headers.findIndex(h => h.includes('url') || h.includes('glb') || h.includes('model') || h.includes('link'));
-  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus memiliki kolom name dan url');
-  const rows = [];
-  for(let i=1;i<lines.length;i++){
-    // naive split but fine for simple CSV from Sheets
-    const parts = lines[i].split(',').map(p=>p.trim());
-    if(parts[nameIdx] && parts[urlIdx]) rows.push({ title: parts[nameIdx], url: parts[urlIdx] });
+  const rows = text.trim().split('\\n').filter(Boolean);
+  const headers = rows[0].split(',').map(h=>h.trim().toLowerCase());
+  const nameIdx = headers.findIndex(h=>h.includes('name') || h.includes('nama') || h.includes('title'));
+  const urlIdx = headers.findIndex(h=>h.includes('url') || h.includes('glb') || h.includes('model') || h.includes('link'));
+  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus berisi name dan url');
+  const data = [];
+  for(let i=1;i<rows.length;i++){
+    const cols = rows[i].split(',').map(c=>c.trim());
+    if(cols[nameIdx] && cols[urlIdx]) data.push({ id:'i'+i, title:cols[nameIdx], url:cols[urlIdx], startRecorded:false });
   }
-  return rows;
+  return data;
 }
 
-/* Haversine (meters) */
-function distanceMeters(lat1, lon1, lat2, lon2){
-  const R = 6371e3;
-  const toRad = v => v * Math.PI / 180;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2);
-  const Δφ = toRad(lat2 - lat1), Δλ = toRad(lon2 - lon1);
-  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-/* bearing (deg) */
-function bearing(lat1, lon1, lat2, lon2){
-  const toRad = v => v * Math.PI/180, toDeg = v=>v*180/Math.PI;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2);
-  const Δλ = toRad(lon2 - lon1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-  return (toDeg(Math.atan2(y,x)) + 360) % 360;
-}
-
-/* CSV load */
+/* load csv and render list */
 async function loadCSV(){
-  statusEl.textContent = 'Memuat CSV...';
   try{
     const r = await fetch(CSV_URL);
-    if(!r.ok) throw new Error('Gagal fetch CSV');
     const txt = await r.text();
-    const rows = parseCSV(txt);
-    // map rows -> items
-    items = rows.map((r,i)=>({ id:`obj_${i}`, title:r.title, url:r.url, startRecorded:false }));
-    statusEl.textContent = `Memuat ${items.length} objek`;
+    items = parseCSV(txt);
     renderList();
-  }catch(err){
-    console.error(err);
-    statusEl.textContent = 'Gagal memuat CSV. Pastikan publik.';
+  }catch(e){
+    objectList.innerHTML = '<div class="small muted">Gagal memuat CSV.</div>';
+    console.error(e);
   }
 }
 
-/* render list */
 function renderList(){
-  objectListEl.innerHTML = '';
-  items.forEach(item=>{
-    const div = document.createElement('div');
-    div.className = 'obj-row';
-    div.innerHTML = `
-      <div style="flex:1; min-width:0;">
-        <div class="font-semibold">${item.title}</div>
-        <div class="muted text-xs">${(item.url||'').split('/').pop()}</div>
+  objectList.innerHTML = '';
+  if(items.length===0){ objectList.innerHTML = '<div class="muted small">Tidak ada objek</div>'; return; }
+  items.forEach(it=>{
+    const el = document.createElement('div');
+    el.className = 'obj';
+    el.innerHTML = `
+      <div style="min-width:0">
+        <div class="title">${it.title}</div>
+        <div class="muted small">${it.startRecorded? 'Start tercatat':'Klik Pilih untuk catat start'}</div>
       </div>
-      <div class="flex flex-col gap-2" style="min-width:120px;align-items:flex-end;">
-        <div style="display:flex; gap:8px;">
-          <button data-id="${item.id}" class="btn btn-ghost btn-select">Pilih</button>
-          <button data-id="${item.id}" class="btn btn-primary btn-view">Lihat</button>
-        </div>
-        <div class="muted text-xs">${item.startRecorded? 'Start tercatat':''}</div>
+      <div style="display:flex; gap:6px;">
+        <button data-id="${it.id}" class="ghost-btn select-btn">Pilih</button>
+        <button data-id="${it.id}" class="big-btn view-btn">Lihat</button>
       </div>
     `;
-    objectListEl.appendChild(div);
+    objectList.appendChild(el);
   });
 
-  // listeners
-  document.querySelectorAll('.btn-select').forEach(b=>{
-    b.addEventListener('click', async (e)=>{
-      const id = e.currentTarget.dataset.id;
+  document.querySelectorAll('.select-btn').forEach(b=>{
+    b.addEventListener('click', async (ev)=>{
+      const id = ev.currentTarget.dataset.id;
       await handleSelect(id);
     });
   });
-  document.querySelectorAll('.btn-view').forEach(b=>{
-    b.addEventListener('click', (e)=>{
-      const id = e.currentTarget.dataset.id;
+  document.querySelectorAll('.view-btn').forEach(b=>{
+    b.addEventListener('click', (ev)=>{
+      const id = ev.currentTarget.dataset.id;
       handleView(id);
     });
   });
 }
 
-/* select: record start using geolocation */
-async function handleSelect(id){
-  const obj = items.find(i=>i.id===id);
-  if(!obj) return;
-  statusEl.textContent = 'Mencatat lokasi start...';
-  try{
-    const pos = await getCurrentPosition({ enableHighAccuracy:true, timeout:12000 });
-    obj.lat = pos.coords.latitude;
-    obj.lng = pos.coords.longitude;
-    obj.startRecorded = true;
-    startPoint = { lat: obj.lat, lng: obj.lng, time: Date.now(), objectId: obj.id };
-    selected = obj;
-    statusEl.textContent = `Dipilih: ${obj.title} • (${obj.lat.toFixed(5)}, ${obj.lng.toFixed(5)})`;
-    selectedChip.textContent = `${obj.title} • start tercatat`;
-    placeMarker(obj);
-    // center map
-    if(map) map.setView([obj.lat, obj.lng], 17);
-    renderList();
-  }catch(err){
-    alert('Gagal ambil lokasi. Aktifkan izin lokasi di browser.');
-    console.error(err);
-    statusEl.textContent = 'Gagal mencatat start';
-  }
-}
-
-/* view: open fullscreen AR modal, hide map area */
-function handleView(id){
-  const obj = items.find(i=>i.id===id);
-  if(!obj) return;
-  // ensure model url present
-  modelViewer.setAttribute('src', obj.url);
-  arTitle.textContent = obj.title;
-  arSub.textContent = (obj.startRecorded ? `Start: ${obj.lat.toFixed(5)}, ${obj.lng.toFixed(5)}` : 'Start belum dicatat');
-  // show fullscreen AR overlay
-  openARFullscreen();
-  // set selected as this object (but do not force start if not recorded)
-  selected = obj;
-}
-
-/* open AR fullscreen: hide map & UI that could obstruct, show ar-fullscreen */
-function openARFullscreen(){
-  // hide elements that should not cover AR
-  document.querySelectorAll('.hide-when-ar').forEach(el=>el.style.opacity = '0');
-  document.querySelector('.app-shell').style.filter = 'blur(0.6px)';
-  arFullscreen.style.display = 'flex';
-  arFullscreen.setAttribute('aria-hidden','false');
-  // request full-screen for immersive feel (best-effort)
-  try { document.documentElement.requestFullscreen?.(); } catch(e){}
-}
-
-/* close AR */
-function closeARFullscreen(){
-  arFullscreen.style.display = 'none';
-  document.querySelectorAll('.hide-when-ar').forEach(el=>el.style.opacity = '');
-  document.querySelector('.app-shell').style.filter = '';
-  arFullscreen.setAttribute('aria-hidden','true');
-  try { if(document.fullscreenElement) document.exitFullscreen?.(); } catch(e){}
-}
-
-/* button events */
-exitArBtn.addEventListener('click', ()=> closeARFullscreen());
-document.getElementById('refresh-csv').addEventListener('click', loadCSV);
-openMapBtn.addEventListener('click', ()=> {
-  // scroll to map
-  document.getElementById('student-map').scrollIntoView({behavior:'smooth'});
-});
-centerMeBtn.addEventListener('click', ()=> {
-  if(currentPosition && map) map.setView([currentPosition.lat, currentPosition.lng], 17);
-});
-
-/* Sampai handlers (both floating and AR top) */
-btnSampaiFloating.addEventListener('click', doSampai);
-arSampaiBtn.addEventListener('click', ()=>{
-  doSampai().then(()=> closeARFullscreen());
-});
-
-/* doSampai: capture current location as END -> compute distance & emission */
-async function doSampai(){
-  if(!selected || !selected.startRecorded){
-    alert('Belum ada objek yang dipilih & start belum tercatat.');
-    return;
-  }
-  statusEl.textContent = 'Mencatat lokasi sampai...';
-  try{
-    const pos = await getCurrentPosition({ enableHighAccuracy:true, timeout:12000 });
-    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() };
-    // compute distance
-    const meters = distanceMeters(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
-    const km = meters / 1000;
-    const vehicle = vehicleSelect.value || 'mobil';
-    const factor = EMISSION_FACTORS[vehicle] || EMISSION_FACTORS.mobil;
-    const grams = km * factor;
-    const kilos = grams / 1000;
-    // update UI
-    lastSummary.textContent = `${selected.title} → ${vehicle}`;
-    lastDistance.textContent = `${km.toFixed(3)} km`;
-    lastEmission.textContent = `${kilos.toFixed(3)} kg CO₂`;
-    statusEl.textContent = `Selesai — ${km.toFixed(3)} km • ${kilos.toFixed(3)} kg CO₂`;
-    // place end marker and polyline
-    if(map){
-      if(leafletMarkers['end']) map.removeLayer(leafletMarkers['end']);
-      leafletMarkers['end'] = L.marker([endPoint.lat, endPoint.lng]).addTo(map).bindPopup('Sampai');
-      if(leafletMarkers['route']) map.removeLayer(leafletMarkers['route']);
-      const pl = L.polyline([[selected.lat, selected.lng],[endPoint.lat, endPoint.lng]], { color:'#7c3aed' }).addTo(map);
-      leafletMarkers['route'] = pl;
-      map.fitBounds(pl.getBounds(), { padding:[40,40] });
-    }
-    return { meters, km, grams, kilos };
-  }catch(err){
-    alert('Gagal mencatat lokasi sampai — aktifkan izin lokasi.');
-    console.error(err);
-    statusEl.textContent = 'Gagal mencatat sampai';
-  }
-}
-
-/* geolocation helper (promise) */
-function getCurrentPosition(opts){
-  return new Promise((resolve,reject)=>{
-    if(!navigator.geolocation) return reject(new Error('Geolocation tidak tersedia'));
-    navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+/* helper: geolocation promise */
+function getGeo(opts={}) {
+  return new Promise((res,rej)=>{
+    if(!navigator.geolocation) return rej(new Error('No geolocation'));
+    navigator.geolocation.getCurrentPosition(res,rej,opts);
   });
 }
 
-/* start camera preview (for mobile quick preview) */
-async function startCamera(){
-  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-      cameraVideo.srcObject = stream;
-    }catch(err){
-      console.warn('camera error', err);
-    }
+/* select -> record start */
+async function handleSelect(id){
+  const it = items.find(x=>x.id===id);
+  if(!it) return;
+  try{
+    const pos = await getGeo({ enableHighAccuracy:true, timeout:12000 });
+    it.lat = pos.coords.latitude;
+    it.lng = pos.coords.longitude;
+    it.startRecorded = true;
+    startPoint = { lat:it.lat, lng:it.lng, id:it.id, time:Date.now() };
+    selected = it;
+    chipSelected.textContent = it.title + ' • Start dicatat';
+    placeMarkerStart(it);
+    // center map
+    if(map) map.setView([it.lat, it.lng], 16);
+    renderList();
+  }catch(e){
+    alert('Gagal merekam lokasi. Pastikan izin lokasi diaktifkan.');
+    console.error(e);
   }
 }
 
-/* Map init */
-function initMap(){
-  map = L.map('student-map', { zoomControl:true }).setView([0,0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+/* view -> open AR fullscreen modal */
+function handleView(id){
+  const it = items.find(x=>x.id===id);
+  if(!it) return;
+  selected = it;
+  if(it.startRecorded) chipSelected.textContent = it.title + ' • Start tercatat';
+  else chipSelected.textContent = it.title + ' • Start belum dicatat';
+  // set model src and open modal
+  mv.setAttribute('src', it.url);
+  openAR();
 }
 
-/* place marker for object start */
-function placeMarker(obj){
+/* open AR: show modal, request fullscreen for immersive feel */
+function openAR(){
+  arModal.style.display = 'flex';
+  arModal.setAttribute('aria-hidden','false');
+  try{ document.documentElement.requestFullscreen?.(); }catch(e){}
+}
+
+/* close AR */
+function closeAR(){
+  arModal.style.display = 'none';
+  arModal.setAttribute('aria-hidden','true');
+  try{ if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){}
+}
+
+/* Sampai: record end -> compute */
+async function handleSampai(){
+  if(!selected || !selected.startRecorded){
+    alert('Pilih objek dan pastikan start sudah dicatat.');
+    return;
+  }
+  try{
+    const pos = await getGeo({ enableHighAccuracy:true, timeout:12000 });
+    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time:Date.now() };
+    const meters = distance(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
+    const km = meters/1000;
+    const veh = vehicle.value || 'mobil';
+    const grams = km * (FACTORS[veh] || FACTORS.mobil);
+    const kg = grams/1000;
+    // show friendly strings
+    resultText.textContent = `${kg.toFixed(3)} kg CO₂`;
+    resultDistance.textContent = `${km.toFixed(3)} km`;
+    // place markers on map
+    placeMarkerEnd(endPoint);
+    drawRoute(selected, endPoint);
+    // close AR if open
+    closeAR();
+  }catch(e){
+    alert('Gagal merekam lokasi sampai. Pastikan izin lokasi.');
+    console.error(e);
+  }
+}
+
+/* compute haversine meters */
+function distance(lat1, lon1, lat2, lon2){
+  const R = 6371e3; const toRad = v=>v*Math.PI/180;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δφ = toRad(lat2-lat1), Δλ = toRad(lon2-lon1);
+  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c;
+}
+
+/* map helpers */
+function placeMarkerStart(it){
   if(!map) return;
-  if(leafletMarkers[obj.id]) map.removeLayer(leafletMarkers[obj.id]);
-  leafletMarkers[obj.id] = L.marker([obj.lat, obj.lng]).addTo(map).bindPopup(`<b>${obj.title}</b><br>Start`);
+  if(markers[it.id]) map.removeLayer(markers[it.id]);
+  markers[it.id] = L.marker([it.lat, it.lng]).addTo(map).bindPopup(it.title + ' (Start)');
+}
+function placeMarkerEnd(pt){
+  if(!map) return;
+  if(markers['end']) map.removeLayer(markers['end']);
+  markers['end'] = L.marker([pt.lat, pt.lng], { opacity:0.9 }).addTo(map).bindPopup('Sampai');
+}
+function drawRoute(it, end){
+  if(!map) return;
+  if(markers['route']) map.removeLayer(markers['route']);
+  const pl = L.polyline([[it.lat, it.lng],[end.lat, end.lng]], { color: '#2b8cff' }).addTo(map);
+  markers['route'] = pl;
+  map.fitBounds(pl.getBounds(), { padding:[20,20] });
 }
 
-/* watch position - update currentPosition */
-function startPositionWatch(){
-  if(!navigator.geolocation) return;
-  navigator.geolocation.watchPosition(p=>{
-    currentPosition = { lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy };
-    // if no selection, center map to user
-    if(map && (!selected || !selected.startRecorded)) map.setView([currentPosition.lat, currentPosition.lng], 17);
-  }, err=> console.warn('watch error',err), { enableHighAccuracy:true, maximumAge:1500, timeout:8000 });
+/* camera preview start */
+async function startCameraPreview(){
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
+    cameraEl.srcObject = s;
+  }catch(e){
+    // ignore if not allowed
+    console.warn('camera preview failed', e);
+  }
 }
+
+/* center map on user */
+async function centerOnUser(){
+  try{
+    const p = await getGeo({ enableHighAccuracy:true, timeout:10000 });
+    if(map) map.setView([p.coords.latitude, p.coords.longitude], 16);
+  }catch(e){ console.warn(e); }
+}
+
+/* event bindings */
+arExit.addEventListener('click', closeAR);
+arSampaiBtn.addEventListener('click', handleSampai);
+btnSampai.addEventListener('click', handleSampai);
+btnRefresh.addEventListener('click', loadCSV);
+btnCenter.addEventListener('click', centerOnUser);
 
 /* boot */
 (async function boot(){
   initMap();
   await loadCSV();
-  await startCamera();
-  startPositionWatch();
-  statusEl.textContent = 'Siap — pilih objek untuk mulai.';
+  await startCameraPreview();
+  // try to center map on user soon
+  try{ const p = await getGeo({ enableHighAccuracy:true, timeout:8000 }); map.setView([p.coords.latitude, p.coords.longitude], 15); } catch(e){}
 })();
 
 </script>
