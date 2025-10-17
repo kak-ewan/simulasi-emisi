@@ -285,6 +285,31 @@
       backdrop-filter: blur(10px);
       font-size: 20px;
     }
+
+    /* Minimized UI */
+    .minimized-ui {
+      position: fixed;
+      top: 80px;
+      left: 20px;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .minimized-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.95);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      backdrop-filter: blur(10px);
+      font-size: 20px;
+    }
   </style>
 </head>
 <body>
@@ -302,14 +327,9 @@
     <video id="camera-feed" class="camera-feed" autoplay playsinline muted></video>
     <div class="ar-overlay" id="ar-overlay"></div>
     
-    <!-- Placement Controls -->
-    <div class="placement-controls">
-      <button id="btnMoveLeft" class="placement-btn">⬅️</button>
-      <button id="btnMoveRight" class="placement-btn">➡️</button>
-      <button id="btnMoveUp" class="placement-btn">⬆️</button>
-      <button id="btnMoveDown" class="placement-btn">⬇️</button>
-      <button id="btnScaleUp" class="placement-btn">➕</button>
-      <button id="btnScaleDown" class="placement-btn">➖</button>
+    <!-- Minimized UI Controls -->
+    <div class="minimized-ui">
+      <button id="btnToggleUI" class="minimized-btn">📱</button>
     </div>
   </div>
 
@@ -320,7 +340,7 @@
   </div>
 
   <!-- Panel Kontrol -->
-  <div class="overlay-ui safe-bottom">
+  <div id="control-panel" class="overlay-ui safe-bottom">
     <div class="flex flex-col gap-3">
       <div>
         <label class="text-xs text-gray-600 block mb-2">Pilih Objek AR</label>
@@ -330,14 +350,11 @@
       </div>
       
       <div class="flex gap-2">
-        <button id="btnPlace" class="flex-1 bg-blue-600 text-white rounded-xl btn-mobile">
-          Letakkan di Tanah
-        </button>
         <button id="btnStart" class="flex-1 bg-emerald-500 text-white rounded-xl btn-mobile">
-          Start
+          Tandai Titik Start
         </button>
-        <button id="btnFinish" class="flex-1 bg-red-500 text-white rounded-xl btn-mobile" disabled>
-          Finish
+        <button id="btnFinish" class="flex-1 bg-blue-600 text-white rounded-xl btn-mobile" disabled>
+          Tandai Titik Finish
         </button>
       </div>
       
@@ -363,7 +380,7 @@
       </div>
       
       <div class="text-xs text-gray-500 text-center mt-2">
-        Arahkan kamera ke tanah, lalu tap "Letakkan di Tanah"
+        Letakkan objek di titik start, lalu pindah ke lokasi finish
       </div>
     </div>
   </div>
@@ -376,12 +393,14 @@
     let currentPosition = null;
     let watchId = null;
     let simActive = false;
-    let simStartPos = null;
-    let simDist = 0;
+    let startPoint = null;
+    let finishPoint = null;
+    let currentDistance = 0;
     let cameraStream = null;
     let currentObject = null;
     let currentObjectName = '';
     let initializationAttempts = 0;
+    let isUIVisible = true;
     
     // AR World State
     let arWorldState = {
@@ -532,43 +551,43 @@
     }
 
     // Place object in WORLD SPACE (not screen space)
-    function placeObjectInWorld(url, objectName) {
-      if (simActive) {
-        alert('Tunggu simulasi selesai dulu sebelum mengganti objek!');
-        return;
-      }
-
+    function placeObjectInWorld(url, objectName, isStartPoint) {
       const overlay = document.getElementById('ar-overlay');
       
-      // Clear existing objects
-      clearAllObjects();
+      // Clear existing objects if this is a new start point
+      if (isStartPoint) {
+        clearAllObjects();
+      }
       
       // Create ground marker at screen center
       createGroundMarker();
       
       // Create world-anchored object
-      currentObject = document.createElement('div');
-      currentObject.className = 'world-object';
-      currentObject.style.left = '50%';
-      currentObject.style.top = '50%';
-      currentObject.style.width = (placementState.baseSize * placementState.currentScale) + 'px';
-      currentObject.style.height = (placementState.baseSize * placementState.currentScale) + 'px';
-      currentObjectName = objectName;
+      const objectElement = document.createElement('div');
+      objectElement.className = 'world-object';
+      objectElement.style.left = '50%';
+      objectElement.style.top = '50%';
+      objectElement.style.width = (placementState.baseSize * placementState.currentScale) + 'px';
+      objectElement.style.height = (placementState.baseSize * placementState.currentScale) + 'px';
       
       // Create object content based on type
       const content = createObjectContent(url, objectName);
-      currentObject.appendChild(content);
+      objectElement.appendChild(content);
       
       // Add object info
-      addObjectInfo(currentObject, objectName);
+      addObjectInfo(objectElement, objectName, isStartPoint);
       
-      overlay.appendChild(currentObject);
+      overlay.appendChild(objectElement);
       
-      // Enable placement mode
-      placementState.isPlacing = true;
-      updatePlacementControls();
+      // Store object reference
+      if (isStartPoint) {
+        currentObject = objectElement;
+        currentObjectName = objectName;
+      }
       
-      console.log('Object placed in world space:', objectName);
+      console.log(`Object placed in world space: ${objectName} (${isStartPoint ? 'Start' : 'Finish'})`);
+      
+      return objectElement;
     }
 
     function createObjectContent(url, objectName) {
@@ -614,21 +633,20 @@
       container.appendChild(placeholder);
     }
 
-    function addObjectInfo(objectElement, objectName) {
+    function addObjectInfo(objectElement, objectName, isStartPoint) {
       // Label
       const label = document.createElement('div');
       label.className = 'object-label';
-      label.textContent = objectName;
+      label.textContent = `${objectName} (${isStartPoint ? 'Start' : 'Finish'})`;
+      label.style.background = isStartPoint ? 'rgba(34, 197, 94, 0.9)' : 'rgba(59, 130, 246, 0.9)';
       objectElement.appendChild(label);
       
       // Distance indicator
       const distance = document.createElement('div');
       distance.className = 'object-distance';
-      distance.textContent = 'Tap & drag untuk memindahkan';
+      distance.textContent = isStartPoint ? 'Titik Start' : 'Titik Finish';
+      distance.style.background = isStartPoint ? 'rgba(34, 197, 94, 0.9)' : 'rgba(59, 130, 246, 0.9)';
       objectElement.appendChild(distance);
-      
-      // Make object draggable
-      makeObjectDraggable(objectElement);
     }
 
     function createGroundMarker() {
@@ -641,116 +659,10 @@
       overlay.appendChild(marker);
     }
 
-    function makeObjectDraggable(objectElement) {
-      let isDragging = false;
-      let startX, startY, initialX, initialY;
-      
-      objectElement.addEventListener('touchstart', (e) => {
-        if (!placementState.isPlacing) return;
-        
-        isDragging = true;
-        const touch = e.touches[0];
-        startX = touch.clientX;
-        startY = touch.clientY;
-        
-        const style = window.getComputedStyle(objectElement);
-        initialX = parseInt(style.left);
-        initialY = parseInt(style.top);
-        
-        e.preventDefault();
-      });
-      
-      objectElement.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - startX;
-        const deltaY = touch.clientY - startY;
-        
-        const newX = initialX + (deltaX / window.innerWidth) * 100;
-        const newY = initialY + (deltaY / window.innerHeight) * 100;
-        
-        // Constrain to screen bounds
-        objectElement.style.left = Math.max(10, Math.min(90, newX)) + '%';
-        objectElement.style.top = Math.max(10, Math.min(90, newY)) + '%';
-        
-        // Update placement state
-        placementState.currentPosition.x = parseFloat(objectElement.style.left);
-        placementState.currentPosition.y = parseFloat(objectElement.style.top);
-        
-        e.preventDefault();
-      });
-      
-      objectElement.addEventListener('touchend', () => {
-        isDragging = false;
-      });
-    }
-
-    // Placement control functions
-    function setupPlacementControls() {
-      document.getElementById('btnMoveLeft').addEventListener('click', () => moveObject(-5, 0));
-      document.getElementById('btnMoveRight').addEventListener('click', () => moveObject(5, 0));
-      document.getElementById('btnMoveUp').addEventListener('click', () => moveObject(0, -5));
-      document.getElementById('btnMoveDown').addEventListener('click', () => moveObject(0, 5));
-      document.getElementById('btnScaleUp').addEventListener('click', () => scaleObject(0.2));
-      document.getElementById('btnScaleDown').addEventListener('click', () => scaleObject(-0.2));
-    }
-
-    function moveObject(deltaX, deltaY) {
-      if (!currentObject || !placementState.isPlacing) return;
-      
-      placementState.currentPosition.x = Math.max(10, Math.min(90, placementState.currentPosition.x + deltaX));
-      placementState.currentPosition.y = Math.max(10, Math.min(90, placementState.currentPosition.y + deltaY));
-      
-      currentObject.style.left = placementState.currentPosition.x + '%';
-      currentObject.style.top = placementState.currentPosition.y + '%';
-    }
-
-    function scaleObject(delta) {
-      if (!currentObject || !placementState.isPlacing) return;
-      
-      placementState.currentScale = Math.max(0.3, Math.min(3, placementState.currentScale + delta));
-      
-      const size = placementState.baseSize * placementState.currentScale;
-      currentObject.style.width = size + 'px';
-      currentObject.style.height = size + 'px';
-    }
-
-    function updatePlacementControls() {
-      const controls = document.querySelector('.placement-controls');
-      controls.style.display = placementState.isPlacing ? 'flex' : 'none';
-    }
-
     function clearAllObjects() {
       const overlay = document.getElementById('ar-overlay');
       overlay.innerHTML = '';
       currentObject = null;
-      placementState.isPlacing = false;
-      updatePlacementControls();
-    }
-
-    function finalizeObjectPlacement() {
-      if (!currentObject) return;
-      
-      // Remove ground marker
-      const marker = document.getElementById('ground-marker');
-      if (marker) marker.remove();
-      
-      // Disable placement mode
-      placementState.isPlacing = false;
-      updatePlacementControls();
-      
-      // Update object label
-      const label = currentObject.querySelector('.object-label');
-      const distance = currentObject.querySelector('.object-distance');
-      
-      if (label) label.textContent = currentObjectName;
-      if (distance) {
-        distance.textContent = 'Diam di tanah';
-        distance.style.background = 'rgba(34, 197, 94, 0.9)';
-      }
-      
-      console.log('Object placement finalized at:', placementState.currentPosition);
     }
 
     // Start location tracking
@@ -772,9 +684,9 @@
           
           updateGPSStatus(true, `📍 GPS aktif (±${Math.round(currentPosition.accuracy)}m)`);
           
-          if (simActive && simStartPos) {
-            const d = haversine(simStartPos, currentPosition);
-            simDist = d / 1000;
+          // Update distance if we have both start and finish points
+          if (startPoint && finishPoint) {
+            currentDistance = haversine(startPoint, finishPoint) / 1000;
             updateDistanceDisplay();
           }
         }, 
@@ -810,9 +722,9 @@
 
     // Update distance and emission display
     function updateDistanceDisplay() {
-      document.getElementById('distVal').textContent = simDist.toFixed(2);
+      document.getElementById('distVal').textContent = currentDistance.toFixed(2);
       const mode = document.getElementById('transportMode').value;
-      const emisi = simDist * (emissionFactors[mode] || 0);
+      const emisi = currentDistance * (emissionFactors[mode] || 0);
       document.getElementById('emisVal').textContent = emisi.toFixed(2);
     }
 
@@ -880,6 +792,14 @@
       initApp();
     }
 
+    // Toggle UI visibility
+    function toggleUI() {
+      isUIVisible = !isUIVisible;
+      const controlPanel = document.getElementById('control-panel');
+      controlPanel.style.display = isUIVisible ? 'block' : 'none';
+      document.getElementById('btnToggleUI').textContent = isUIVisible ? '📱' : '📋';
+    }
+
     // Initialize app
     async function initApp() {
       try {
@@ -894,7 +814,6 @@
         }
         
         startWatch();
-        setupPlacementControls();
         
         setTimeout(() => {
           document.getElementById('loading-screen').style.display = 'none';
@@ -908,70 +827,76 @@
     }
 
     // Event listeners
-    document.getElementById('btnPlace').addEventListener('click', () => {
+    document.getElementById('btnStart').addEventListener('click', () => {
       const idx = document.getElementById('objectSelect').value;
       if (idx === '') {
         alert('Pilih objek terlebih dahulu.');
         return;
       }
-      const obj = objects[idx];
-      placeObjectInWorld(obj.url, obj.name);
-    });
-
-    document.getElementById('btnStart').addEventListener('click', () => {
+      
       if (!currentPosition) {
         alert('Menunggu GPS aktif...');
         return;
       }
       
-      if (!currentObject) {
-        alert('Letakkan objek AR terlebih dahulu!');
-        return;
-      }
+      const obj = objects[idx];
+      placeObjectInWorld(obj.url, obj.name, true);
       
-      // Finalize object placement before starting simulation
-      finalizeObjectPlacement();
+      // Record start point coordinates
+      startPoint = {...currentPosition};
       
-      simStartPos = {...currentPosition};
-      simDist = 0;
-      simActive = true;
-      document.getElementById('btnStart').disabled = true;
+      // Enable finish button
       document.getElementById('btnFinish').disabled = false;
-      document.getElementById('btnPlace').disabled = true;
+      document.getElementById('btnStart').disabled = true;
       document.getElementById('objectSelect').disabled = true;
       
-      updateGPSStatus(true, '🟢 Simulasi aktif...');
-      updateDistanceDisplay();
-      
-      // Update object appearance during simulation
-      const label = currentObject.querySelector('.object-label');
-      if (label) {
-        label.textContent = `${currentObjectName} (Simulasi Aktif)`;
-        label.style.background = 'rgba(34, 197, 94, 0.9)';
-      }
+      updateGPSStatus(true, '📍 Titik Start ditandai');
     });
 
     document.getElementById('btnFinish').addEventListener('click', () => {
-      if (!simActive) {
-        alert('Simulasi belum dimulai');
+      if (!currentPosition) {
+        alert('Menunggu GPS aktif...');
         return;
       }
       
-      const mode = document.getElementById('transportMode').value;
-      const emisi = simDist * (emissionFactors[mode] || 0);
-      
-      if (window.confirm(`Simulasi selesai!\n\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg\n\nHapus objek AR?`)) {
-        clearAllObjects();
+      if (!startPoint) {
+        alert('Tandai titik start terlebih dahulu!');
+        return;
       }
       
-      simActive = false;
+      const idx = document.getElementById('objectSelect').value;
+      const obj = objects[idx];
+      
+      // Place finish object
+      placeObjectInWorld(obj.url, obj.name, false);
+      
+      // Record finish point coordinates
+      finishPoint = {...currentPosition};
+      
+      // Calculate distance
+      currentDistance = haversine(startPoint, finishPoint) / 1000;
+      updateDistanceDisplay();
+      
+      // Show results
+      const mode = document.getElementById('transportMode').value;
+      const emisi = currentDistance * (emissionFactors[mode] || 0);
+      
+      alert(`Simulasi selesai!\n\nJarak: ${currentDistance.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg`);
+      
+      // Reset for next simulation
       document.getElementById('btnStart').disabled = false;
       document.getElementById('btnFinish').disabled = true;
-      document.getElementById('btnPlace').disabled = false;
       document.getElementById('objectSelect').disabled = false;
+      startPoint = null;
+      finishPoint = null;
+      currentDistance = 0;
+      updateDistanceDisplay();
       
       updateGPSStatus(true, '✅ Simulasi selesai');
     });
+
+    // Toggle UI button
+    document.getElementById('btnToggleUI').addEventListener('click', toggleUI);
 
     // Start the application
     if (document.readyState === 'loading') {
