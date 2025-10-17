@@ -149,24 +149,20 @@
   </div>
 
 <script>
-/* GeoEmisi AR - Kids Edition
-   - CSV with name,url (glb)
-   - select -> record start (current geolocation)
-   - view (open AR fullscreen) -> user can place model on ground; AR modal hides other UI
-   - Sampai -> record end, compute distance & emission
+/* GeoEmisi AR - Kids Edition (fixed)
+   - Perbaikan: daftar objek selalu muncul
+   - Baca kolom 'name' atau 'nama'
+   - Warna latar list diperjelas
 */
 
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
-// simple emission factors (g CO2 / km)
 const FACTORS = { motor:120, mobil:200, truk:900 };
 
-/* state */
-let items = [];            // {id,title,url,lat,lng,startRecorded}
+let items = [];
 let selected = null;
 let startPoint = null;
 let endPoint = null;
 
-/* ui refs */
 const objectList = document.getElementById('object-list');
 const chipSelected = document.getElementById('chip-selected');
 const mv = document.getElementById('mv');
@@ -179,225 +175,191 @@ const resultText = document.getElementById('result-text');
 const resultDistance = document.getElementById('result-distance');
 const btnRefresh = document.getElementById('btn-refresh');
 const btnCenter = document.getElementById('btn-center');
-
 const cameraEl = document.getElementById('camera');
 
-/* map init */
 let map = null;
 let markers = {};
+
 function initMap(){
-  map = L.map('map', { zoomControl:false }).setView([0,0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'&copy; OpenStreetMap' }).addTo(map);
+  map = L.map('map',{zoomControl:false}).setView([0,0],2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'&copy; OpenStreetMap'
+  }).addTo(map);
 }
 
-/* parse csv (simple) */
 function parseCSV(text){
-  const rows = text.trim().split('\\n').filter(Boolean);
-  const headers = rows[0].split(',').map(h=>h.trim().toLowerCase());
-  const nameIdx = headers.findIndex(h=>h.includes('name') || h.includes('nama') || h.includes('title'));
-  const urlIdx = headers.findIndex(h=>h.includes('url') || h.includes('glb') || h.includes('model') || h.includes('link'));
-  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus berisi name dan url');
-  const data = [];
-  for(let i=1;i<rows.length;i++){
-    const cols = rows[i].split(',').map(c=>c.trim());
-    if(cols[nameIdx] && cols[urlIdx]) data.push({ id:'i'+i, title:cols[nameIdx], url:cols[urlIdx], startRecorded:false });
+  const lines = text.trim().split('\n').filter(Boolean);
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const nameIdx = headers.findIndex(h=>h==='name' || h==='nama' || h.includes('name'));
+  const urlIdx  = headers.findIndex(h=>h==='url' || h.includes('url'));
+  if(nameIdx===-1 || urlIdx===-1) throw new Error('CSV harus punya kolom name/nama dan url');
+  const out=[];
+  for(let i=1;i<lines.length;i++){
+    const cols=lines[i].split(',').map(c=>c.trim());
+    const nama=cols[nameIdx]; const url=cols[urlIdx];
+    if(nama && url) out.push({id:'i'+i,title:nama,url, startRecorded:false});
   }
-  return data;
+  return out;
 }
 
-/* load csv and render list */
 async function loadCSV(){
   try{
-    const r = await fetch(CSV_URL);
-    const txt = await r.text();
-    items = parseCSV(txt);
+    const r=await fetch(CSV_URL);
+    const txt=await r.text();
+    items=parseCSV(txt);
+    console.log('Parsed items:',items);
     renderList();
   }catch(e){
-    objectList.innerHTML = '<div class="small muted">Gagal memuat CSV.</div>';
-    console.error(e);
+    console.error('CSV error',e);
+    objectList.innerHTML='<div style="color:red">Gagal memuat CSV 😢</div>';
   }
 }
 
 function renderList(){
-  objectList.innerHTML = '';
-  if(items.length===0){ objectList.innerHTML = '<div class="muted small">Tidak ada objek</div>'; return; }
+  objectList.innerHTML='';
+  if(items.length===0){
+    objectList.innerHTML='<div class="muted small">Tidak ada objek</div>';
+    return;
+  }
   items.forEach(it=>{
-    const el = document.createElement('div');
-    el.className = 'obj';
-    el.innerHTML = `
+    const el=document.createElement('div');
+    el.className='obj';
+    el.style.background='#e0f2fe'; // biru muda agar kontras
+    el.innerHTML=`
       <div style="min-width:0">
         <div class="title">${it.title}</div>
-        <div class="muted small">${it.startRecorded? 'Start tercatat':'Klik Pilih untuk catat start'}</div>
+        <div class="muted small">${it.startRecorded?'Start tercatat':'Klik Pilih untuk mulai'}</div>
       </div>
       <div style="display:flex; gap:6px;">
         <button data-id="${it.id}" class="ghost-btn select-btn">Pilih</button>
         <button data-id="${it.id}" class="big-btn view-btn">Lihat</button>
-      </div>
-    `;
+      </div>`;
     objectList.appendChild(el);
   });
 
   document.querySelectorAll('.select-btn').forEach(b=>{
-    b.addEventListener('click', async (ev)=>{
-      const id = ev.currentTarget.dataset.id;
-      await handleSelect(id);
-    });
+    b.addEventListener('click',e=>handleSelect(e.currentTarget.dataset.id));
   });
   document.querySelectorAll('.view-btn').forEach(b=>{
-    b.addEventListener('click', (ev)=>{
-      const id = ev.currentTarget.dataset.id;
-      handleView(id);
-    });
+    b.addEventListener('click',e=>handleView(e.currentTarget.dataset.id));
   });
 }
 
-/* helper: geolocation promise */
+/* Geolocation helper */
 function getGeo(opts={}) {
   return new Promise((res,rej)=>{
-    if(!navigator.geolocation) return rej(new Error('No geolocation'));
+    if(!navigator.geolocation) return rej('no geo');
     navigator.geolocation.getCurrentPosition(res,rej,opts);
   });
 }
 
-/* select -> record start */
 async function handleSelect(id){
-  const it = items.find(x=>x.id===id);
+  const it=items.find(x=>x.id===id);
   if(!it) return;
   try{
-    const pos = await getGeo({ enableHighAccuracy:true, timeout:12000 });
-    it.lat = pos.coords.latitude;
-    it.lng = pos.coords.longitude;
-    it.startRecorded = true;
-    startPoint = { lat:it.lat, lng:it.lng, id:it.id, time:Date.now() };
-    selected = it;
-    chipSelected.textContent = it.title + ' • Start dicatat';
-    placeMarkerStart(it);
-    // center map
-    if(map) map.setView([it.lat, it.lng], 16);
+    const pos=await getGeo({enableHighAccuracy:true,timeout:10000});
+    it.lat=pos.coords.latitude; it.lng=pos.coords.longitude;
+    it.startRecorded=true;
+    selected=it; startPoint={lat:it.lat,lng:it.lng};
+    chipSelected.textContent=`${it.title} • Start dicatat`;
+    placeStart(it);
     renderList();
-  }catch(e){
-    alert('Gagal merekam lokasi. Pastikan izin lokasi diaktifkan.');
-    console.error(e);
-  }
+    if(map) map.setView([it.lat,it.lng],16);
+  }catch(e){alert('Tidak bisa ambil lokasi');}
 }
 
-/* view -> open AR fullscreen modal */
 function handleView(id){
-  const it = items.find(x=>x.id===id);
+  const it=items.find(x=>x.id===id);
   if(!it) return;
-  selected = it;
-  if(it.startRecorded) chipSelected.textContent = it.title + ' • Start tercatat';
-  else chipSelected.textContent = it.title + ' • Start belum dicatat';
-  // set model src and open modal
-  mv.setAttribute('src', it.url);
+  selected=it;
+  mv.src=it.url;
   openAR();
 }
 
-/* open AR: show modal, request fullscreen for immersive feel */
 function openAR(){
-  arModal.style.display = 'flex';
-  arModal.setAttribute('aria-hidden','false');
-  try{ document.documentElement.requestFullscreen?.(); }catch(e){}
+  arModal.style.display='flex';
+  try{document.documentElement.requestFullscreen?.();}catch(e){}
 }
-
-/* close AR */
 function closeAR(){
-  arModal.style.display = 'none';
-  arModal.setAttribute('aria-hidden','true');
-  try{ if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){}
+  arModal.style.display='none';
+  try{if(document.fullscreenElement)document.exitFullscreen?.();}catch(e){}
 }
 
-/* Sampai: record end -> compute */
 async function handleSampai(){
-  if(!selected || !selected.startRecorded){
-    alert('Pilih objek dan pastikan start sudah dicatat.');
-    return;
-  }
+  if(!selected||!selected.startRecorded){alert('Pilih objek dulu.');return;}
   try{
-    const pos = await getGeo({ enableHighAccuracy:true, timeout:12000 });
-    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time:Date.now() };
-    const meters = distance(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
-    const km = meters/1000;
-    const veh = vehicle.value || 'mobil';
-    const grams = km * (FACTORS[veh] || FACTORS.mobil);
-    const kg = grams/1000;
-    // show friendly strings
-    resultText.textContent = `${kg.toFixed(3)} kg CO₂`;
-    resultDistance.textContent = `${km.toFixed(3)} km`;
-    // place markers on map
-    placeMarkerEnd(endPoint);
-    drawRoute(selected, endPoint);
-    // close AR if open
+    const pos=await getGeo({enableHighAccuracy:true,timeout:10000});
+    endPoint={lat:pos.coords.latitude,lng:pos.coords.longitude};
+    const m=dist(selected.lat,selected.lng,endPoint.lat,endPoint.lng);
+    const km=m/1000;
+    const veh=vehicle.value;
+    const kg=(km*(FACTORS[veh]||FACTORS.mobil))/1000;
+    resultText.textContent=`${kg.toFixed(3)} kg CO₂`;
+    resultDistance.textContent=`${km.toFixed(3)} km`;
+    placeEnd(endPoint);
+    drawRoute(selected,endPoint);
     closeAR();
-  }catch(e){
-    alert('Gagal merekam lokasi sampai. Pastikan izin lokasi.');
-    console.error(e);
-  }
+  }catch(e){alert('Gagal ambil lokasi');}
 }
 
-/* compute haversine meters */
-function distance(lat1, lon1, lat2, lon2){
-  const R = 6371e3; const toRad = v=>v*Math.PI/180;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δφ = toRad(lat2-lat1), Δλ = toRad(lon2-lon1);
-  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R*c;
+/* jarak */
+function dist(a,b,c,d){
+  const R=6371e3,rad=x=>x*Math.PI/180;
+  const φ1=rad(a),φ2=rad(c),dφ=rad(c-a),dλ=rad(d-b);
+  const x=Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/* map helpers */
-function placeMarkerStart(it){
-  if(!map) return;
-  if(markers[it.id]) map.removeLayer(markers[it.id]);
-  markers[it.id] = L.marker([it.lat, it.lng]).addTo(map).bindPopup(it.title + ' (Start)');
+/* map markers */
+function placeStart(it){
+  if(!map)return;
+  if(markers[it.id])map.removeLayer(markers[it.id]);
+  markers[it.id]=L.marker([it.lat,it.lng]).addTo(map).bindPopup(it.title+' (Start)');
 }
-function placeMarkerEnd(pt){
-  if(!map) return;
-  if(markers['end']) map.removeLayer(markers['end']);
-  markers['end'] = L.marker([pt.lat, pt.lng], { opacity:0.9 }).addTo(map).bindPopup('Sampai');
+function placeEnd(pt){
+  if(!map)return;
+  if(markers.end)map.removeLayer(markers.end);
+  markers.end=L.marker([pt.lat,pt.lng]).addTo(map).bindPopup('Sampai');
 }
-function drawRoute(it, end){
-  if(!map) return;
-  if(markers['route']) map.removeLayer(markers['route']);
-  const pl = L.polyline([[it.lat, it.lng],[end.lat, end.lng]], { color: '#2b8cff' }).addTo(map);
-  markers['route'] = pl;
-  map.fitBounds(pl.getBounds(), { padding:[20,20] });
+function drawRoute(a,b){
+  if(!map)return;
+  if(markers.route)map.removeLayer(markers.route);
+  const pl=L.polyline([[a.lat,a.lng],[b.lat,b.lng]],{color:'#2b8cff'}).addTo(map);
+  markers.route=pl;
+  map.fitBounds(pl.getBounds(),{padding:[20,20]});
 }
 
-/* camera preview start */
-async function startCameraPreview(){
+/* camera */
+async function startCam(){
   try{
-    const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-    cameraEl.srcObject = s;
-  }catch(e){
-    // ignore if not allowed
-    console.warn('camera preview failed', e);
-  }
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    cameraEl.srcObject=s;
+  }catch(e){console.warn(e);}
 }
 
-/* center map on user */
-async function centerOnUser(){
+/* events */
+arExit.addEventListener('click',closeAR);
+arSampaiBtn.addEventListener('click',handleSampai);
+btnSampai.addEventListener('click',handleSampai);
+btnRefresh.addEventListener('click',loadCSV);
+btnCenter.addEventListener('click',async()=>{
   try{
-    const p = await getGeo({ enableHighAccuracy:true, timeout:10000 });
-    if(map) map.setView([p.coords.latitude, p.coords.longitude], 16);
-  }catch(e){ console.warn(e); }
-}
+    const p=await getGeo({enableHighAccuracy:true,timeout:8000});
+    map.setView([p.coords.latitude,p.coords.longitude],16);
+  }catch(e){}
+});
 
-/* event bindings */
-arExit.addEventListener('click', closeAR);
-arSampaiBtn.addEventListener('click', handleSampai);
-btnSampai.addEventListener('click', handleSampai);
-btnRefresh.addEventListener('click', loadCSV);
-btnCenter.addEventListener('click', centerOnUser);
-
-/* boot */
-(async function boot(){
+/* start */
+(async()=>{
   initMap();
   await loadCSV();
-  await startCameraPreview();
-  // try to center map on user soon
-  try{ const p = await getGeo({ enableHighAccuracy:true, timeout:8000 }); map.setView([p.coords.latitude, p.coords.longitude], 15); } catch(e){}
+  await startCam();
+  try{
+    const p=await getGeo({enableHighAccuracy:true,timeout:8000});
+    map.setView([p.coords.latitude,p.coords.longitude],15);
+  }catch(e){}
 })();
-
 </script>
+
 </body>
 </html>
