@@ -1,1871 +1,417 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoEmisi AR - Simulasi Emisi Karbon</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <!-- Import model-viewer component for 3D models -->
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
-    <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #f0f9ff;
-            overflow-x: hidden;
-        }
-        .mode-selection {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        }
-        .ar-content {
-            transition: all 0.3s ease;
-        }
-        .ar-content:hover {
-            transform: scale(1.05);
-        }
-        .compass-arrow {
-            transition: transform 0.5s ease;
-        }
-        #teacher-map, #student-map {
-            height: 100%;
-            width: 100%;
-            border-radius: 12px;
-        }
-        .camera-feed {
-            position: relative;
-            overflow: hidden;
-            border-radius: 12px;
-            background-color: #000;
-        }
-        .camera-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 10;
-            perspective: 1000px;
-            transform-style: preserve-3d;
-        }
-        .ar-object {
-            position: absolute;
-            transform-style: preserve-3d;
-            pointer-events: auto;
-            transition: opacity 0.3s ease;
-        }
-        .ar-object-content {
-            position: relative;
-            padding: 15px;
-            background-color: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            transform-origin: center;
-            transform-style: preserve-3d;
-            backface-visibility: hidden;
-            max-width: 300px;
-            min-width: 150px;
-        }
-        .ar-object-anchor {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background-color: rgba(37, 99, 235, 0.9);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
-        }
-        .ar-object-anchor::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: rgba(37, 99, 235, 0.3);
-            transform: translate(-50%, -50%);
-            animation: pulse 2s infinite;
-        }
-        .ar-indicator {
-            position: absolute;
-            padding: 8px 12px;
-            background-color: rgba(37, 99, 235, 0.9);
-            color: white;
-            border-radius: 20px;
-            font-weight: 500;
-            transform: translate(-50%, -50%);
-            z-index: 20;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-            pointer-events: auto;
-        }
-        .direction-arrow {
-            position: absolute;
-            bottom: 100px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 60px;
-            background-color: rgba(37, 99, 235, 0.9);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .arrow {
-            width: 30px;
-            height: 30px;
-            border-top: 6px solid white;
-            border-right: 6px solid white;
-            transform-origin: center;
-        }
-        .nearby-notification {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(37, 99, 235, 0.9);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            z-index: 20;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .content-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .map-loading {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.8);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            border-radius: 12px;
-        }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(59, 130, 246, 0.3);
-            border-radius: 50%;
-            border-top-color: #3b82f6;
-            animation: spin 1s linear infinite;
-            margin-bottom: 10px;
-        }
-        .location-button {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            background-color: white;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .location-button:hover {
-            background-color: #f3f4f6;
-            transform: scale(1.05);
-        }
-        .ar-anchor-settings {
-            border-top: 1px solid #e5e7eb;
-            padding-top: 1rem;
-            margin-top: 1rem;
-        }
-        .map-control-button {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background-color: white;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .map-control-button:hover {
-            background-color: #f3f4f6;
-            transform: scale(1.05);
-        }
-        .compass-container {
-            position: absolute;
-            top: 80px;
-            left: 20px;
-            z-index: 900;
-            background-color: white;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        .compass-needle {
-            position: absolute;
-            width: 4px;
-            height: 24px;
-            background: linear-gradient(to bottom, #dc2626 50%, #1d4ed8 50%);
-            transform-origin: center;
-            transition: transform 0.3s ease;
-        }
-        .compass-circle {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background-color: #fff;
-            border: 2px solid #6b7280;
-            border-radius: 50%;
-        }
-        .debug-info {
-            position: absolute;
-            bottom: 160px;
-            left: 10px;
-            background-color: rgba(255, 255, 255, 0.8);
-            padding: 5px 10px;
-            border-radius: 8px;
-            font-size: 12px;
-            z-index: 900;
-            max-width: 200px;
-        }
-        .back-button {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            background-color: white;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-        }
-        .top-controls {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            gap: 10px;
-        }
-        .control-button {
-            background-color: white;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-        }
-        .place-button {
-            position: absolute;
-            bottom: 80px;
-            right: 20px;
-            z-index: 1000;
-            background-color: #10b981;
-            color: white;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .place-button:hover {
-            background-color: #059669;
-            transform: scale(1.05);
-        }
-        .coordinate-display {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-            z-index: 2000;
-            max-width: 90%;
-            width: 400px;
-        }
-        .coordinate-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .coordinate-item:last-child {
-            border-bottom: none;
-        }
-        .copy-button {
-            background-color: #3b82f6;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 4px 8px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .copy-button:hover {
-            background-color: #2563eb;
-        }
-        .copy-button.copied {
-            background-color: #10b981;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        @keyframes pulse {
-            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
-            100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
-        }
-        .calibration-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.8);
-            z-index: 2000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            text-align: center;
-            padding: 20px;
-        }
-        .calibration-animation {
-            width: 200px;
-            height: 200px;
-            margin: 20px 0;
-            position: relative;
-        }
-        .calibration-phone {
-            width: 80px;
-            height: 140px;
-            background-color: #3b82f6;
-            border-radius: 10px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            animation: rotate-phone 4s infinite ease-in-out;
-        }
-        .ar-content-display {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 400px;
-            background-color: rgba(255, 255, 255, 0.95);
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            z-index: 950;
-            max-height: 40vh;
-            overflow-y: auto;
-        }
-        .ar-content-display h3 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1e3a8a;
-        }
-        .ar-content-display .close-btn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background-color: #f3f4f6;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        .ar-object-3d {
-            position: absolute;
-            transform-style: preserve-3d;
-            pointer-events: auto;
-        }
-        .ar-object-3d-model {
-            width: 100px;
-            height: 100px;
-            background-color: rgba(37, 99, 235, 0.7);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            transform-origin: center;
-            transform-style: preserve-3d;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            animation: float 3s infinite ease-in-out;
-        }
-        .ar-object-image {
-            max-width: 200px;
-            max-height: 200px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        }
-        .ar-object-video {
-            width: 200px;
-            height: 150px;
-            background-color: #000;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-        }
-        .ar-object-presentation {
-            width: 240px;
-            height: 180px;
-            background-color: #fff;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            border: 1px solid #ddd;
-            overflow: hidden;
-        }
-        .ar-object-text {
-            padding: 15px;
-            background-color: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            max-width: 250px;
-        }
-        .ar-object-floating {
-            animation: float 3s infinite ease-in-out;
-        }
-        .treasure-box {
-            width: 80px;
-            height: 80px;
-            background: linear-gradient(45deg, #8B4513, #D2691E);
-            border-radius: 8px;
-            position: relative;
-            cursor: pointer;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-            border: 3px solid #654321;
-            animation: treasureGlow 2s infinite ease-in-out;
-        }
-        .treasure-box::before {
-            content: '';
-            position: absolute;
-            top: -8px;
-            left: 10%;
-            right: 10%;
-            height: 16px;
-            background: linear-gradient(45deg, #FFD700, #FFA500);
-            border-radius: 8px 8px 0 0;
-            border: 2px solid #B8860B;
-        }
-        .treasure-box::after {
-            content: '🔒';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 24px;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-        }
-        .treasure-box.opened::after {
-            content: '✨';
-            animation: sparkle 1s infinite;
-        }
-        .treasure-box.can-open {
-            animation: treasureReady 1s infinite ease-in-out;
-            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.6);
-        }
-        .treasure-box.can-open::before {
-            background: linear-gradient(45deg, #FFD700, #FFFF00);
-            box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
-        }
-        .ar-object-revealed {
-            animation: revealContent 1s ease-out;
-            transform-origin: center bottom;
-        }
-        .open-box-button {
-            position: absolute;
-            bottom: -40px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(45deg, #FFD700, #FFA500);
-            color: #8B4513;
-            border: none;
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-weight: bold;
-            font-size: 12px;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-            animation: buttonPulse 1.5s infinite;
-        }
-        .distance-requirement {
-            position: absolute;
-            bottom: -40px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            border-radius: 15px;
-            padding: 4px 12px;
-            font-size: 10px;
-            white-space: nowrap;
-        }
-        @keyframes float {
-            0% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-10px) rotate(2deg); }
-            100% { transform: translateY(0px) rotate(0deg); }
-        }
-        @keyframes treasureGlow {
-            0% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); }
-            50% { box-shadow: 0 8px 25px rgba(139, 69, 19, 0.5); }
-            100% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3); }
-        }
-        @keyframes treasureReady {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-        @keyframes sparkle {
-            0% { transform: translate(-50%, -50%) scale(1); }
-            50% { transform: translate(-50%, -50%) scale(1.2); }
-            100% { transform: translate(-50%, -50%) scale(1); }
-        }
-        @keyframes revealContent {
-            0% { 
-                opacity: 0; 
-                transform: scale(0.3) translateY(50px); 
-            }
-            50% { 
-                opacity: 0.8; 
-                transform: scale(1.1) translateY(-10px); 
-            }
-            100% { 
-                opacity: 1; 
-                transform: scale(1) translateY(0px); 
-            }
-        }
-        @keyframes buttonPulse {
-            0% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.05); }
-            100% { transform: translateX(-50%) scale(1); }
-        }
-        @keyframes rotate-phone {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            25% { transform: translate(-50%, -50%) rotate(90deg); }
-            50% { transform: translate(-50%, -50%) rotate(180deg); }
-            75% { transform: translate(-50%, -50%) rotate(270deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-        .ar-object-label {
-            position: absolute;
-            top: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(37, 99, 235, 0.9);
-            color: white;
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 12px;
-            white-space: nowrap;
-        }
-        .ar-object-distance {
-            position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: rgba(0, 0, 0, 0.6);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-        }
-        .world-anchored-object {
-            position: absolute;
-            transform-style: preserve-3d;
-            pointer-events: auto;
-            z-index: 100;
-        }
-        .world-anchored-content {
-            transform-style: preserve-3d;
-            backface-visibility: hidden;
-        }
-        .world-anchored-3d {
-            width: 200px;
-            height: 200px;
-            transform-style: preserve-3d;
-        }
-        .world-anchored-image {
-            max-width: 300px;
-            max-height: 300px;
-            border-radius: 10px;
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-        }
-        .world-anchored-video {
-            width: 320px;
-            height: 240px;
-            background-color: #000;
-            border-radius: 10px;
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-        }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GeoEmisi AR</title>
 
-        .ar-view-mode-toggle {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            z-index: 1000;
-            background-color: white;
-            border-radius: 20px;
-            padding: 8px 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            cursor: pointer;
-            font-weight: 500;
-            color: #2563eb;
-        }
-        model-viewer {
-            width: 100%;
-            height: 300px;
-            background-color: #f3f4f6;
-            --poster-color: #f3f4f6;
-        }
-        .presentation-controls {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 10px;
-        }
-        .presentation-controls button {
-            background-color: #4f46e5;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 6px 12px;
-            cursor: pointer;
-        }
-        .presentation-controls button:disabled {
-            background-color: #9ca3af;
-            cursor: not-allowed;
-        }
-        .presentation-slide {
-            width: 100%;
-            height: 300px;
-            background-color: #f3f4f6;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .presentation-slide iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        .presentation-slide img {
-            max-width: 100%;
-            max-height: 100%;
-        }
-        .slide-counter {
-            text-align: center;
-            margin-top: 8px;
-            font-size: 14px;
-            color: #4b5563;
-        }
-        .youtube-container {
-            position: relative;
-            width: 100%;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
-            height: 0;
-            overflow: hidden;
-            border-radius: 8px;
-        }
-        .youtube-container iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        
-        /* GeoEmisi AR Specific Styles */
-        .emission-vehicle {
-            width: 120px;
-            height: 60px;
-            background-color: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            border: 2px solid #10b981;
-            font-weight: bold;
-            text-align: center;
-            padding: 5px;
-        }
-        .emission-vehicle.motor {
-            background-color: rgba(16, 185, 129, 0.2);
-        }
-        .emission-vehicle.mobil {
-            background-color: rgba(59, 130, 246, 0.2);
-        }
-        .emission-vehicle.truk {
-            background-color: rgba(245, 158, 11, 0.2);
-        }
-        .emission-route {
-            position: absolute;
-            width: 8px;
-            background-color: rgba(239, 68, 68, 0.7);
-            transform-origin: 0 0;
-            z-index: 50;
-            pointer-events: none;
-        }
-        .emission-result {
-            background-color: rgba(255, 255, 255, 0.95);
-            border-radius: 10px;
-            padding: 15px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            max-width: 300px;
-            text-align: center;
-        }
-        .emission-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #dc2626;
-            margin: 10px 0;
-        }
-        .emission-comparison {
-            font-size: 14px;
-            color: #4b5563;
-            margin-top: 10px;
-        }
-        .vehicle-selection {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        .vehicle-option {
-            display: flex;
-            align-items: center;
-            padding: 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .vehicle-option:hover {
-            background-color: #f3f4f6;
-        }
-        .vehicle-option.selected {
-            background-color: #dbeafe;
-            border: 2px solid #3b82f6;
-        }
-        .vehicle-icon {
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            font-size: 20px;
-        }
-        .vehicle-info {
-            flex: 1;
-        }
-        .vehicle-name {
-            font-weight: bold;
-        }
-        .vehicle-emission {
-            font-size: 12px;
-            color: #6b7280;
-        }
-        .placement-indicator {
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            background-color: rgba(16, 185, 129, 0.8);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-            z-index: 100;
-            pointer-events: none;
-        }
-        .placement-indicator::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            border: 2px solid rgba(16, 185, 129, 0.5);
-            transform: translate(-50%, -50%);
-            animation: pulse 2s infinite;
-        }
-    </style>
+<!-- Tailwind for quick styling -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Leaflet (OpenStreetMap) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+<!-- model-viewer for .glb & AR -->
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
+
+<style>
+  body { font-family: Inter, system-ui, -apple-system, "Poppins", sans-serif; background:#f0f9ff; }
+  #student-mode { min-height:100vh; display:flex; flex-direction:column; }
+  .camera-feed { position:relative; height:60vh; background:#000; overflow:hidden; border-radius:12px; }
+  #camera-feed { width:100%; height:100%; object-fit:cover; }
+  #ar-overlay { position:absolute; inset:0; pointer-events:none; z-index:20; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  .panel { background:white; border-radius:12px; padding:12px; box-shadow:0 6px 20px rgba(0,0,0,0.06); }
+  #student-map { height:35vh; border-radius:12px; }
+  .hidden{display:none;}
+</style>
 </head>
 <body>
-    <div id="app" class="min-h-screen">
-        <!-- Loading Screen -->
-        <div id="loading-screen" class="mode-selection min-h-screen flex flex-col items-center justify-center p-6 text-white">
-            <div class="text-center mb-12">
-                <h1 class="text-4xl font-bold mb-2">GeoEmisi AR</h1>
-                <p class="text-xl opacity-90">Simulasi Perhitungan Emisi Karbon</p>
-            </div>
-            <div class="spinner mb-4"></div>
-            <p id="loading-status" class="text-lg opacity-80">Mengambil data dari server...</p>
+  <div class="max-w-5xl mx-auto p-4">
+    <h1 class="text-3xl font-bold mb-2">GeoEmisi AR</h1>
+    <p class="text-sm text-gray-600 mb-4">Pilih objek (.glb) — lokasi awal dicatat saat memilih. Lihat model di AR dan hitung emisi saat sampai.</p>
+
+    <!-- Loading / status -->
+    <div id="status" class="mb-3 panel">Memuat daftar objek...</div>
+
+    <!-- Main layout -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Left column: camera / AR -->
+      <div class="md:col-span-2">
+        <div class="camera-feed panel">
+          <video id="camera-feed" autoplay playsinline muted></video>
+          <div id="ar-overlay"></div>
+
+          <!-- AR Controls overlay -->
+          <div style="position:absolute; top:12px; left:12px; z-index:40;">
+            <button id="btn-view-map" class="px-3 py-2 rounded bg-white">Peta</button>
+          </div>
+
+          <div style="position:absolute; top:12px; right:12px; z-index:40;" class="flex gap-2">
+            <select id="vehicle-select" class="px-3 py-2 rounded">
+              <option value="motor">Motor</option>
+              <option value="mobil" selected>Mobil</option>
+              <option value="truk">Truk</option>
+            </select>
+            <button id="btn-sampai" class="px-3 py-2 rounded bg-green-500 text-white">Sampai</button>
+          </div>
+
+          <!-- show emission result -->
+          <div id="emission-result" style="position:absolute; bottom:14px; left:14px; z-index:40;" class="panel hidden"></div>
         </div>
 
-        <!-- Student Mode -->
-        <div id="student-mode" class="hidden min-h-screen bg-gray-100">
-            <!-- Camera View -->
-            <div id="camera-view" class="relative h-screen">
-                <div class="camera-feed h-full w-full">
-                    <video id="camera-feed" class="h-full w-full object-cover" autoplay playsinline></video>
-                    <div class="camera-overlay" id="ar-overlay"></div>
-                    
-                    <!-- Back button -->
-                    <div class="back-button" onclick="location.reload()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                    </div>
-                    
-                    <!-- Top controls -->
-                    <div class="top-controls">
-                        <div class="control-button" onclick="toggleView('map')">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                            </svg>
-                        </div>
-                        <div class="control-button" onclick="showContentList()">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                            </svg>
-                        </div>
-                        <div class="control-button" onclick="toggleDebugInfo()">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </div>
-                    </div>
-                    
-                    <!-- Compass -->
-                    <div class="compass-container">
-                        <div class="compass-needle" id="compass-needle"></div>
-                        <div class="compass-circle"></div>
-                    </div>
-                    
-                    <!-- Direction arrow -->
-                    <div class="direction-arrow" id="direction-arrow">
-                        <div class="arrow" id="arrow"></div>
-                    </div>
-                    
-                    <!-- Distance indicator -->
-                    <div class="absolute bottom-20 left-0 right-0 text-center text-white text-lg font-semibold" id="distance-indicator">
-                        Mencari konten terdekat...
-                    </div>
-                    
-                    <!-- Debug info - hidden by default -->
-                    <div class="debug-info hidden" id="debug-info">
-                        Arah: 0°<br>
-                        Target: N/A<br>
-                        Bearing: N/A
-                    </div>
-                    
-                    <!-- AR View Mode Toggle -->
-                    <div class="ar-view-mode-toggle" onclick="toggleARViewMode()">
-                        <span id="ar-view-mode-text">Tampilan AR: Dunia Nyata</span>
-                    </div>
-                    
-                    <!-- GeoEmisi AR Controls -->
-                    <div class="absolute bottom-40 left-0 right-0 flex justify-center space-x-4">
-                        <button id="start-placement-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg transition-all" onclick="startPlacement()">
-                            Letakkan Objek
-                        </button>
-                        <button id="place-vehicle-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg transition-all hidden" onclick="placeVehicle()">
-                            Pilih Kendaraan
-                        </button>
-                        <button id="place-destination-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg shadow-lg transition-all hidden" onclick="placeDestination()">
-                            Tentukan Tujuan
-                        </button>
-                    </div>
-                    
-                    <!-- Placement Indicator -->
-                    <div id="placement-indicator" class="placement-indicator hidden"></div>
-                </div>
+        <!-- model viewer modal (for placing the .glb on ground) -->
+        <div id="model-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+          <div class="bg-white rounded-lg w-[90%] max-w-2xl p-4">
+            <div class="flex justify-between items-center mb-2">
+              <h3 class="font-semibold">Lihat / Letakkan Objek (AR)</h3>
+              <button id="close-model" class="px-2 py-1 rounded bg-gray-100">Tutup</button>
             </div>
-            
-            <!-- Map View -->
-            <div id="map-view" class="hidden min-h-screen bg-white">
-                <div class="relative h-screen">
-                    <div id="student-map"></div>
-                    <div class="back-button" onclick="toggleView('camera')">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </div>
-                    <div class="location-button" onclick="centerMap()">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                    </div>
-                </div>
-            </div>
+            <model-viewer id="model-viewer" style="width:100%; height:70vh;" camera-controls ar ar-modes="webxr scene-viewer quick-look" interaction-prompt="auto"></model-viewer>
+            <div class="mt-2 text-sm text-gray-600">Tekan tombol AR (jika tersedia) untuk menempatkan model di permukaan nyata.</div>
+          </div>
         </div>
+      </div>
+
+      <!-- Right column: list + map -->
+      <div class="">
+        <div class="panel mb-4">
+          <h4 class="font-semibold mb-2">Daftar Objek (CSV)</h4>
+          <div id="object-list" class="space-y-2 max-h-[40vh] overflow-auto"></div>
+        </div>
+
+        <div class="panel">
+          <h4 class="font-semibold mb-2">Peta (OpenStreetMap)</h4>
+          <div id="student-map"></div>
+          <div class="mt-2 text-xs text-gray-500">Titik start dicatat saat memilih objek; titik end dicatat saat tekan "Sampai".</div>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Content List Modal -->
-    <div id="content-list-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full max-h-[80vh] overflow-hidden">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Pilih Objek AR</h2>
-                <button onclick="closeContentList()" class="text-gray-500 hover:text-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            <div class="content-list overflow-y-auto" id="content-list">
-                <!-- Content will be loaded here -->
-            </div>
+<script>
+/*
+  GeoEmisi AR - simplified flow:
+  - CSV has only: name,url (glb)
+  - When user clicks an object: capture current geolocation -> store as object's lat/lng and as startPoint
+    and show option "Lihat Objek" which opens model-viewer (with ar)
+  - When user taps "Sampai": capture geolocation -> store as endPoint, compute distance start->end, compute emissions
+  - Vehicles: motor, mobil, truk with default emission factors (g CO2 per km)
+  - Object in AR overlay is anchored by world coords (we simulate by Leaflet marker + overlay behavior)
+*/
+
+/* ========== CONFIG ========== */
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
+
+// emission factors (g CO2 / km) — defaults, can be adjusted
+const EMISSION_FACTORS = {
+  motor: 120,   // motorcycle ~120 g/km (example)
+  mobil: 200,   // car ~200 g/km (example)
+  truk: 900     // truck ~900 g/km (example)
+};
+
+/* ========== STATE ========== */
+let arContents = [];     // { id, title, url, lat?, lng?, startRecorded:bool }
+let selected = null;     // currently selected object (reference)
+let startPoint = null;   // {lat,lng}
+let endPoint = null;
+let currentPosition = null;
+
+/* ========== UI refs ========== */
+const statusEl = document.getElementById('status');
+const objectListEl = document.getElementById('object-list');
+const studentMapEl = document.getElementById('student-map');
+const cameraVideo = document.getElementById('camera-feed');
+const modelModal = document.getElementById('model-modal');
+const modelViewer = document.getElementById('model-viewer');
+const closeModelBtn = document.getElementById('close-model');
+const btnSampai = document.getElementById('btn-sampai');
+const vehicleSelect = document.getElementById('vehicle-select');
+const emissionResult = document.getElementById('emission-result');
+const arOverlay = document.getElementById('ar-overlay');
+const btnViewMap = document.getElementById('btn-view-map');
+
+let map = null;
+let leafletMarkers = {}; // id -> marker
+
+/* ========== UTILITIES ========== */
+function parseCSV(text){
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l=>l);
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nama') || h.includes('title'));
+  const urlIdx = headers.findIndex(h => h.includes('url') || h.includes('glb') || h.includes('model'));
+  if(nameIdx === -1 || urlIdx === -1) throw new Error('CSV harus punya kolom name dan url');
+  const rows = [];
+  for(let i=1;i<lines.length;i++){
+    const cols = lines[i].split(',').map(c=>c.trim());
+    if(cols[nameIdx] && cols[urlIdx]){
+      rows.push({ title: cols[nameIdx], url: cols[urlIdx] });
+    }
+  }
+  return rows;
+}
+
+// Haversine (meters)
+function distanceMeters(lat1, lon1, lat2, lon2){
+  const R = 6371e3;
+  const toRad = v => v * Math.PI / 180;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1), Δλ = toRad(lon2 - lon1);
+  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+/* ========== CSV LOADING ========== */
+async function loadCSVAndPopulate(){
+  statusEl.textContent = 'Memuat CSV...';
+  try{
+    const r = await fetch(CSV_URL);
+    if(!r.ok) throw new Error('CSV fetch gagal');
+    const txt = await r.text();
+    const rows = parseCSV(txt);
+    arContents = rows.map((r,i)=>({ id: 'obj_'+i, title: r.title, url: r.url, startRecorded:false }));
+    statusEl.textContent = `Memuat ${arContents.length} objek. Pilih salah satu untuk mulai (lokasi akan dicatat saat pilih).`;
+    renderObjectList();
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = 'Gagal memuat CSV. Pastikan URL CSV bisa diakses publik.';
+  }
+}
+
+/* ========== RENDER LIST ========== */
+
+function renderObjectList(){
+  objectListEl.innerHTML = '';
+  arContents.forEach(item=>{
+    const div = document.createElement('div');
+    div.className = 'flex items-center justify-between p-2 border rounded';
+    div.innerHTML = `
+      <div>
+        <div class="font-medium">${item.title}</div>
+        <div class="text-xs text-gray-500">${item.url.split('/').pop()}</div>
+      </div>
+      <div class="flex flex-col gap-2 items-end">
+        <div>
+          <button data-id="${item.id}" class="btn-select px-3 py-1 rounded bg-blue-600 text-white text-sm">Pilih</button>
         </div>
-    </div>
-
-    <!-- Vehicle Selection Modal -->
-    <div id="vehicle-selection-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Pilih Kendaraan</h2>
-                <button onclick="closeVehicleSelection()" class="text-gray-500 hover:text-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            <div class="vehicle-selection">
-                <div class="vehicle-option" onclick="selectVehicle('motor')">
-                    <div class="vehicle-icon">🏍️</div>
-                    <div class="vehicle-info">
-                        <div class="vehicle-name">Motor Pribadi</div>
-                        <div class="vehicle-emission">Emisi: 72 g/km</div>
-                    </div>
-                </div>
-                <div class="vehicle-option" onclick="selectVehicle('mobil')">
-                    <div class="vehicle-icon">🚗</div>
-                    <div class="vehicle-info">
-                        <div class="vehicle-name">Mobil Pribadi</div>
-                        <div class="vehicle-emission">Emisi: 120 g/km</div>
-                    </div>
-                </div>
-                <div class="vehicle-option" onclick="selectVehicle('truk')">
-                    <div class="vehicle-icon">🚚</div>
-                    <div class="vehicle-info">
-                        <div class="vehicle-name">Truk</div>
-                        <div class="vehicle-emission">Emisi: 223 g/km</div>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-4 flex justify-end">
-                <button onclick="confirmVehicleSelection()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all">
-                    Konfirmasi
-                </button>
-            </div>
+        <div>
+          <button data-id="${item.id}" class="btn-view px-3 py-1 rounded bg-gray-100 text-sm">Lihat Objek</button>
         </div>
+      </div>
+    `;
+    objectListEl.appendChild(div);
+  });
+
+  // attach listeners
+  document.querySelectorAll('.btn-select').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      const id = e.currentTarget.dataset.id;
+      await handleSelectObject(id);
+    });
+  });
+  document.querySelectorAll('.btn-view').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const id = e.currentTarget.dataset.id;
+      handleViewObject(id);
+    });
+  });
+}
+
+/* ========== SELECT OBJECT => RECORD START LOCATION ========== */
+
+async function handleSelectObject(id){
+  const obj = arContents.find(o=>o.id===id);
+  if(!obj) return;
+  // Get current location
+  statusEl.textContent = 'Mencatat lokasi start...';
+  try{
+    const pos = await getCurrentPositionPromise({ enableHighAccuracy:true, timeout:10000 });
+    obj.lat = pos.coords.latitude;
+    obj.lng = pos.coords.longitude;
+    obj.startRecorded = true;
+    startPoint = { lat: obj.lat, lng: obj.lng, time: Date.now(), objectId: obj.id };
+    selected = obj;
+    statusEl.textContent = `Dipilih: ${obj.title} — start dicatat (${obj.lat.toFixed(6)}, ${obj.lng.toFixed(6)})`;
+    placeMarker(obj);
+    // center map
+    if(map) map.setView([obj.lat, obj.lng], 18);
+  }catch(err){
+    console.error(err);
+    alert('Tidak dapat mengambil lokasi — pastikan izin lokasi diaktifkan.');
+    statusEl.textContent = 'Gagal mencatat lokasi start.';
+  }
+}
+
+/* ========== VIEW OBJECT (model-viewer) ========== */
+
+function handleViewObject(id){
+  const obj = arContents.find(o=>o.id===id);
+  if(!obj) return;
+  // set model-viewer src and open modal
+  modelViewer.setAttribute('src', obj.url);
+  modelModal.classList.remove('hidden');
+  modelViewer.scrollIntoView({behavior:'smooth'});
+}
+
+closeModelBtn.addEventListener('click', ()=> modelModal.classList.add('hidden'));
+
+/* ========== GEOLOCATION PROMISE ========== */
+
+function getCurrentPositionPromise(options){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation) return reject(new Error('Geolocation not supported'));
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+/* ========== MAP / MARKERS ========== */
+
+function initMap(){
+  map = L.map('student-map', { zoomControl:false }).setView([0,0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+}
+
+function placeMarker(obj){
+  // remove existing marker for id
+  if(leafletMarkers[obj.id]){
+    map.removeLayer(leafletMarkers[obj.id]);
+  }
+  const m = L.marker([obj.lat, obj.lng]).addTo(map).bindPopup(`<b>${obj.title}</b><br>Start`);
+  leafletMarkers[obj.id] = m;
+}
+
+/* ========== CAMERA START ========== */
+async function startCamera(){
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
+      cameraVideo.srcObject = stream;
+    }catch(err){
+      console.warn('camera error', err);
+      // fallthrough - camera optional
+    }
+  }
+}
+
+/* ========== Sampai (record end) & calculate emission ========== */
+
+btnSampai.addEventListener('click', async ()=>{
+  if(!selected || !selected.startRecorded){
+    alert('Belum ada objek yang dipilih / start belum dicatat.');
+    return;
+  }
+  statusEl.textContent = 'Mencatat lokasi sampai...';
+  try{
+    const pos = await getCurrentPositionPromise({ enableHighAccuracy:true, timeout:10000 });
+    endPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, time: Date.now() };
+    // place end marker
+    if(leafletMarkers['end']) { map.removeLayer(leafletMarkers['end']); }
+    leafletMarkers['end'] = L.marker([endPoint.lat, endPoint.lng], { icon: L.divIcon({ className:'', html:'<div class="p-1 bg-green-400 rounded-full"></div>', iconSize:[16,16] }) }).addTo(map).bindPopup('Sampai');
+    // compute distance
+    const meters = distanceMeters(selected.lat, selected.lng, endPoint.lat, endPoint.lng);
+    const km = meters / 1000;
+    const vehicle = vehicleSelect.value || 'mobil';
+    const factor = EMISSION_FACTORS[vehicle] || EMISSION_FACTORS.mobil;
+    const gramsCO2 = km * factor;
+    // show result
+    emissionResult.classList.remove('hidden');
+    emissionResult.innerHTML = `
+      <div><strong>Objek:</strong> ${selected.title}</div>
+      <div><strong>Jarak:</strong> ${km.toFixed(3)} km (${Math.round(meters)} m)</div>
+      <div><strong>Kendaraan:</strong> ${vehicle}</div>
+      <div class="mt-2 text-lg font-semibold">Estimasi Emisi: ${ (gramsCO2/1000).toFixed(3) } kg CO₂</div>
+    `;
+    statusEl.textContent = 'Selesai: hasil emisi ditampilkan.';
+    // draw line on map
+    if(map){
+      if(leafletMarkers['route']) map.removeLayer(leafletMarkers['route']);
+      const poly = L.polyline([[selected.lat, selected.lng],[endPoint.lat,endPoint.lng]], { color:'#4f46e5' }).addTo(map);
+      leafletMarkers['route'] = poly;
+      map.fitBounds(poly.getBounds(), { padding:[40,40] });
+    }
+  }catch(err){
+    console.error(err);
+    alert('Gagal mencatat lokasi sampai. Pastikan izin lokasi diaktifkan.');
+    statusEl.textContent = 'Gagal mencatat lokasi sampai.';
+  }
+});
+
+/* ========== Keep AR object fixed relative to world coords ========== */
+/* We'll simulate a simple world-anchor indicator in the camera overlay: show a small label
+   at screen position mapped from bearing/distance. This remains fixed in world coords because
+   we use the stored lat/lng of the object (not camera-relative). */
+
+function updateAROverlay(){
+  arOverlay.innerHTML = '';
+  if(!currentPosition || !selected || !selected.startRecorded) return;
+  const dist = distanceMeters(currentPosition.lat, currentPosition.lng, selected.lat, selected.lng);
+  const bearing = calculateBearing(currentPosition.lat, currentPosition.lng, selected.lat, selected.lng);
+  // compute relative bearing from device heading if available
+  // Note: DeviceOrientationEvent alpha is not used here to keep implementation simple across browsers.
+  // We'll place element at top-center and show distance & static direction arrow.
+  const el = document.createElement('div');
+  el.style.position = 'absolute';
+  el.style.left = '50%';
+  el.style.top = '10%';
+  el.style.transform = 'translateX(-50%)';
+  el.style.pointerEvents = 'auto';
+  el.innerHTML = `
+    <div style="background:rgba(255,255,255,0.85); padding:8px 12px; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.12);">
+      <div style="font-weight:600">${selected.title}</div>
+      <div style="font-size:13px;color:#374151">${Math.round(dist)} m • bearing ${Math.round(bearing)}°</div>
     </div>
+  `;
+  arOverlay.appendChild(el);
+}
 
-    <!-- Emission Result Modal -->
-    <div id="emission-result-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Hasil Perhitungan Emisi</h2>
-                <button onclick="closeEmissionResult()" class="text-gray-500 hover:text-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-            <div class="emission-result">
-                <div id="emission-route-info" class="mb-4">
-                    <!-- Route info will be inserted here -->
-                </div>
-                <div class="emission-value" id="emission-value">0 g CO₂</div>
-                <div class="emission-comparison" id="emission-comparison">
-                    <!-- Comparison info will be inserted here -->
-                </div>
-            </div>
-            <div class="mt-4 flex justify-end">
-                <button onclick="closeEmissionResult()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all">
-                    Tutup
-                </button>
-            </div>
-        </div>
-    </div>
+/* helper: bearing (deg) */
+function calculateBearing(lat1, lon1, lat2, lon2){
+  const toRad = v => v * Math.PI/180;
+  const toDeg = v => v * 180/Math.PI;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  let θ = Math.atan2(y,x);
+  θ = (toDeg(θ) + 360) % 360;
+  return θ;
+}
 
-    <script>
-        // Global variables
-        let currentMode = 'student';
-        let currentView = 'camera';
-        let arObjects = [];
-        let selectedObject = null;
-        let selectedVehicle = null;
-        let placementMode = null;
-        let vehiclePosition = null;
-        let destinationPosition = null;
-        let arViewMode = 'world'; // 'world' or 'screen'
-        let debugMode = false;
-        let userLocation = null;
-        let userHeading = 0;
-        let cameraStream = null;
-        let map = null;
-        let arContentData = [];
-        
-        // Vehicle emission factors (grams of CO2 per km)
-        const vehicleEmissions = {
-            'motor': 72,
-            'mobil': 120,
-            'truk': 223
-        };
+/* track current position for overlay & map updates */
+function startTrackingPosition(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition((p)=>{
+    currentPosition = { lat:p.coords.latitude, lng:p.coords.longitude, accuracy:p.coords.accuracy };
+    // update map center modestly
+    if(map && (!selected || !selected.startRecorded)) {
+      map.setView([currentPosition.lat, currentPosition.lng], 17);
+    }
+    // update overlay anchor
+    updateAROverlay();
+  }, (err)=>{
+    console.warn('watchPosition err',err);
+  }, { enableHighAccuracy:true, maximumAge:1000, timeout:5000 });
+}
 
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', async function() {
-            // Load AR content data from CSV
-            await loadARContentData();
-            
-            // Initialize camera
-            await initializeCamera();
-            
-            // Initialize student mode
-            initializeStudentMode();
-            
-            // Hide loading screen
-            document.getElementById('loading-screen').classList.add('hidden');
-            document.getElementById('student-mode').classList.remove('hidden');
-            
-            // Start device orientation tracking
-            startOrientationTracking();
-            
-            // Start location tracking
-            startLocationTracking();
-            
-            // Add some sample AR objects for demonstration
-            addSampleARObjects();
-        });
+/* start everything */
+(async function boot(){
+  initMap();
+  await loadCSVAndPopulate();
+  await startCamera();
+  startTrackingPosition();
+  statusEl.textContent = 'Siap. Pilih objek dari daftar.';
+  // open map toggle
+  btnViewMap.addEventListener('click', ()=> {
+    map.invalidateSize();
+    // scroll to map area
+    studentMapEl.scrollIntoView({behavior:'smooth'});
+  });
+})();
 
-        // Load AR content data from CSV
-        async function loadARContentData() {
-            const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
-            
-            try {
-                const response = await fetch(csvUrl);
-                const csvText = await response.text();
-                
-                // Parse CSV data
-                const lines = csvText.split('\n');
-                const headers = lines[0].split(',');
-                
-                for (let i = 1; i < lines.length; i++) {
-                    if (lines[i].trim() === '') continue;
-                    
-                    const values = lines[i].split(',');
-                    const object = {};
-                    
-                    for (let j = 0; j < headers.length; j++) {
-                        object[headers[j].trim()] = values[j] ? values[j].trim() : '';
-                    }
-                    
-                    arContentData.push(object);
-                }
-                
-                console.log('Loaded AR content data:', arContentData);
-            } catch (error) {
-                console.error('Error loading AR content data:', error);
-                // Use fallback data if CSV loading fails
-                arContentData = [
-                    { nama: 'Mobil Listrik', url: 'https://modelviewer.dev/shared-assets/models/Astronaut.glb' },
-                    { nama: 'Pohon Penyerap Karbon', url: 'https://modelviewer.dev/shared-assets/models/NeilArmstrong.glb' },
-                    { nama: 'Pabrik Emisi', url: 'https://modelviewer.dev/shared-assets/models/RobotExpressive.glb' }
-                ];
-            }
-        }
-
-        // Initialize camera
-        async function initializeCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' } 
-                });
-                cameraStream = stream;
-                const videoElement = document.getElementById('camera-feed');
-                videoElement.srcObject = stream;
-            } catch (error) {
-                console.error('Error accessing camera:', error);
-                // Fallback to a placeholder image if camera is not available
-                document.getElementById('camera-feed').style.backgroundImage = 'url("https://via.placeholder.com/800x600?text=Kamera+tidak+tersedia")';
-            }
-        }
-
-        // Initialize student mode
-        function initializeStudentMode() {
-            // Initialize map
-            initializeMap();
-            
-            // Add event listeners
-            document.getElementById('camera-feed').addEventListener('click', handleCameraClick);
-            
-            // Update UI
-            updateUI();
-        }
-
-        // Initialize map
-        function initializeMap() {
-            // Initialize Leaflet map
-            map = L.map('student-map').setView([-6.2088, 106.8456], 15); // Default to Jakarta
-            
-            // Add tile layer
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-            
-            // Add user location marker when available
-            if (userLocation) {
-                L.marker([userLocation.latitude, userLocation.longitude])
-                    .addTo(map)
-                    .bindPopup('Lokasi Anda')
-                    .openPopup();
-            }
-        }
-
-        // Start device orientation tracking
-        function startOrientationTracking() {
-            if (window.DeviceOrientationEvent) {
-                window.addEventListener('deviceorientation', handleOrientation);
-            } else {
-                console.log('Device orientation not supported');
-            }
-        }
-
-        // Handle device orientation
-        function handleOrientation(event) {
-            if (event.alpha !== null) {
-                userHeading = event.alpha;
-                updateCompass();
-                updateARObjects();
-            }
-        }
-
-        // Start location tracking
-        function startLocationTracking() {
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(
-                    handleLocationUpdate,
-                    handleLocationError,
-                    { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-                );
-            } else {
-                console.log('Geolocation not supported');
-            }
-        }
-
-        // Handle location update
-        function handleLocationUpdate(position) {
-            userLocation = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: position.coords.accuracy
-            };
-            
-            // Update map if it exists
-            if (map) {
-                map.setView([userLocation.latitude, userLocation.longitude], 15);
-                
-                // Remove existing user marker
-                map.eachLayer(layer => {
-                    if (layer instanceof L.Marker && layer.getPopup() && layer.getPopup().getContent() === 'Lokasi Anda') {
-                        map.removeLayer(layer);
-                    }
-                });
-                
-                // Add new user marker
-                L.marker([userLocation.latitude, userLocation.longitude])
-                    .addTo(map)
-                    .bindPopup('Lokasi Anda')
-                    .openPopup();
-            }
-            
-            updateARObjects();
-        }
-
-        // Handle location error
-        function handleLocationError(error) {
-            console.log('Location error:', error);
-        }
-
-        // Update compass display
-        function updateCompass() {
-            const compassNeedle = document.getElementById('compass-needle');
-            if (compassNeedle) {
-                compassNeedle.style.transform = `rotate(${userHeading}deg)`;
-            }
-        }
-
-        // Update AR objects based on user location and heading
-        function updateARObjects() {
-            if (!userLocation) return;
-            
-            const arOverlay = document.getElementById('ar-overlay');
-            const cameraFeed = document.getElementById('camera-feed');
-            
-            // Clear existing AR objects
-            arOverlay.innerHTML = '';
-            
-            // Add AR objects
-            arObjects.forEach(obj => {
-                if (obj.type === 'world') {
-                    addWorldAnchoredObject(obj);
-                } else {
-                    addScreenAnchoredObject(obj);
-                }
-            });
-            
-            // Add placement indicator if in placement mode
-            if (placementMode) {
-                const indicator = document.createElement('div');
-                indicator.id = 'placement-indicator';
-                indicator.className = 'placement-indicator';
-                indicator.style.left = '50%';
-                indicator.style.top = '50%';
-                arOverlay.appendChild(indicator);
-            }
-            
-            // Add emission route if both positions are set
-            if (vehiclePosition && destinationPosition) {
-                addEmissionRoute();
-            }
-        }
-
-        // Add world-anchored AR object
-        function addWorldAnchoredObject(obj) {
-            if (!userLocation) return;
-            
-            const arOverlay = document.getElementById('ar-overlay');
-            
-            // Calculate bearing and distance to object
-            const bearing = calculateBearing(
-                userLocation.latitude, 
-                userLocation.longitude,
-                obj.lat, 
-                obj.lng
-            );
-            
-            const distance = calculateDistance(
-                userLocation.latitude, 
-                userLocation.longitude,
-                obj.lat, 
-                obj.lng
-            );
-            
-            // Calculate screen position based on bearing and user heading
-            const screenX = calculateScreenX(bearing, userHeading);
-            const screenY = calculateScreenY(distance);
-            
-            // Create AR object element
-            const arObject = document.createElement('div');
-            arObject.className = 'world-anchored-object';
-            arObject.style.left = `${screenX}%`;
-            arObject.style.top = `${screenY}%`;
-            arObject.style.zIndex = Math.floor(100 - distance);
-            arObject.dataset.id = obj.id;
-            arObject.dataset.type = obj.contentType;
-            
-            // Add content based on type
-            let contentHtml = '';
-            
-            if (obj.contentType === '3d-model') {
-                contentHtml = `
-                    <div class="world-anchored-3d">
-                        <model-viewer 
-                            src="${obj.url}" 
-                            alt="${obj.name}"
-                            auto-rotate
-                            camera-controls
-                            shadow-intensity="1">
-                        </model-viewer>
-                    </div>
-                `;
-            } else if (obj.contentType === 'image') {
-                contentHtml = `
-                    <img src="${obj.url}" alt="${obj.name}" class="world-anchored-image">
-                `;
-            } else if (obj.contentType === 'video') {
-                contentHtml = `
-                    <div class="world-anchored-video">
-                        <video src="${obj.url}" controls autoplay loop muted></video>
-                    </div>
-                `;
-            } else {
-                // Default to text/HTML content
-                contentHtml = `
-                    <div class="ar-object-content">
-                        <h3>${obj.name}</h3>
-                        <p>${obj.description || ''}</p>
-                    </div>
-                `;
-            }
-            
-            arObject.innerHTML = contentHtml;
-            
-            // Add click event
-            arObject.addEventListener('click', function(e) {
-                e.stopPropagation();
-                showARContent(obj);
-            });
-            
-            arOverlay.appendChild(arObject);
-        }
-
-        // Add screen-anchored AR object
-        function addScreenAnchoredObject(obj) {
-            const arOverlay = document.getElementById('ar-overlay');
-            
-            const arObject = document.createElement('div');
-            arObject.className = 'ar-object';
-            arObject.style.left = `${obj.x}%`;
-            arObject.style.top = `${obj.y}%`;
-            arObject.dataset.id = obj.id;
-            arObject.dataset.type = obj.contentType;
-            
-            // Add content based on type
-            let contentHtml = '';
-            
-            if (obj.contentType === '3d-model') {
-                contentHtml = `
-                    <div class="ar-object-3d-model">
-                        <model-viewer 
-                            src="${obj.url}" 
-                            alt="${obj.name}"
-                            auto-rotate
-                            camera-controls
-                            shadow-intensity="1">
-                        </model-viewer>
-                    </div>
-                `;
-            } else if (obj.contentType === 'image') {
-                contentHtml = `
-                    <img src="${obj.url}" alt="${obj.name}" class="ar-object-image">
-                `;
-            } else if (obj.contentType === 'video') {
-                contentHtml = `
-                    <div class="ar-object-video">
-                        <video src="${obj.url}" controls autoplay loop muted></video>
-                    </div>
-                `;
-            } else {
-                // Default to text/HTML content
-                contentHtml = `
-                    <div class="ar-object-content">
-                        <h3>${obj.name}</h3>
-                        <p>${obj.description || ''}</p>
-                    </div>
-                `;
-            }
-            
-            arObject.innerHTML = contentHtml;
-            
-            // Add click event
-            arObject.addEventListener('click', function(e) {
-                e.stopPropagation();
-                showARContent(obj);
-            });
-            
-            arOverlay.appendChild(arObject);
-        }
-
-        // Add emission route between vehicle and destination
-        function addEmissionRoute() {
-            if (!vehiclePosition || !destinationPosition) return;
-            
-            const arOverlay = document.getElementById('ar-overlay');
-            
-            // Calculate distance in real world (1m = 10km in simulation)
-            const realDistance = calculateDistance(
-                vehiclePosition.lat, 
-                vehiclePosition.lng,
-                destinationPosition.lat, 
-                destinationPosition.lng
-            );
-            
-            const simulatedDistance = realDistance * 10000; // Convert to km
-            
-            // Calculate emission
-            const emission = simulatedDistance * vehicleEmissions[selectedVehicle];
-            
-            // Create route line
-            const routeLine = document.createElement('div');
-            routeLine.className = 'emission-route';
-            
-            // Calculate position and rotation for the line
-            const startX = 50; // Center of screen
-            const startY = 50;
-            
-            // For simplicity, we'll just show a horizontal line in the middle of the screen
-            routeLine.style.left = `${startX}%`;
-            routeLine.style.top = `${startY}%`;
-            routeLine.style.width = `${Math.min(simulatedDistance / 10, 80)}%`; // Scale the line length
-            routeLine.style.transform = `rotate(0deg)`;
-            
-            arOverlay.appendChild(routeLine);
-            
-            // Create emission result display
-            const emissionResult = document.createElement('div');
-            emissionResult.className = 'emission-result';
-            emissionResult.style.left = `${startX + Math.min(simulatedDistance / 10, 80) / 2}%`;
-            emissionResult.style.top = `${startY - 10}%`;
-            
-            emissionResult.innerHTML = `
-                <h3>Emisi Karbon</h3>
-                <div class="emission-value">${emission.toFixed(2)} g CO₂</div>
-                <div class="emission-comparison">
-                    Jarak: ${simulatedDistance.toFixed(2)} km<br>
-                    Kendaraan: ${getVehicleName(selectedVehicle)}<br>
-                    Faktor emisi: ${vehicleEmissions[selectedVehicle]} g/km
-                </div>
-            `;
-            
-            arOverlay.appendChild(emissionResult);
-        }
-
-        // Calculate bearing between two coordinates
-        function calculateBearing(lat1, lon1, lat2, lon2) {
-            const φ1 = lat1 * Math.PI / 180;
-            const φ2 = lat2 * Math.PI / 180;
-            const Δλ = (lon2 - lon1) * Math.PI / 180;
-            
-            const y = Math.sin(Δλ) * Math.cos(φ2);
-            const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-            const θ = Math.atan2(y, x);
-            
-            return (θ * 180 / Math.PI + 360) % 360;
-        }
-
-        // Calculate distance between two coordinates in meters
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3; // Earth's radius in meters
-            const φ1 = lat1 * Math.PI / 180;
-            const φ2 = lat2 * Math.PI / 180;
-            const Δφ = (lat2 - lat1) * Math.PI / 180;
-            const Δλ = (lon2 - lon1) * Math.PI / 180;
-            
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            
-            return R * c;
-        }
-
-        // Calculate screen X position based on bearing and user heading
-        function calculateScreenX(bearing, userHeading) {
-            // Normalize angles
-            let relativeBearing = (bearing - userHeading + 360) % 360;
-            
-            // Convert to screen position (0-100%)
-            // Center is 50%, left edge is 0%, right edge is 100%
-            let screenX = 50 + (relativeBearing > 180 ? relativeBearing - 360 : relativeBearing) / 3.6;
-            
-            // Clamp to screen edges
-            return Math.max(0, Math.min(100, screenX));
-        }
-
-        // Calculate screen Y position based on distance
-        function calculateScreenY(distance) {
-            // Convert distance to screen position (0-100%)
-            // Closer objects appear higher on screen
-            let screenY = 50 - (Math.min(distance, 100) / 2);
-            
-            // Clamp to screen edges
-            return Math.max(10, Math.min(90, screenY));
-        }
-
-        // Handle camera click
-        function handleCameraClick(event) {
-            if (placementMode === 'vehicle') {
-                placeVehicleAtClick(event);
-            } else if (placementMode === 'destination') {
-                placeDestinationAtClick(event);
-            }
-        }
-
-        // Start placement mode
-        function startPlacement() {
-            placementMode = 'vehicle';
-            document.getElementById('start-placement-btn').classList.add('hidden');
-            document.getElementById('place-vehicle-btn').classList.remove('hidden');
-            document.getElementById('placement-indicator').classList.remove('hidden');
-        }
-
-        // Place vehicle at click position
-        function placeVehicleAtClick(event) {
-            if (!userLocation) {
-                alert('Lokasi tidak tersedia. Pastikan GPS aktif.');
-                return;
-            }
-            
-            // For simplicity, we'll place the vehicle at the user's current location
-            vehiclePosition = {
-                lat: userLocation.latitude,
-                lng: userLocation.longitude
-            };
-            
-            // Show vehicle selection modal
-            document.getElementById('vehicle-selection-modal').classList.remove('hidden');
-        }
-
-        // Select vehicle type
-        function selectVehicle(type) {
-            selectedVehicle = type;
-            
-            // Update UI
-            document.querySelectorAll('.vehicle-option').forEach(option => {
-                option.classList.remove('selected');
-            });
-            event.currentTarget.classList.add('selected');
-        }
-
-        // Confirm vehicle selection
-        function confirmVehicleSelection() {
-            if (!selectedVehicle) {
-                alert('Pilih jenis kendaraan terlebih dahulu.');
-                return;
-            }
-            
-            // Close modal
-            document.getElementById('vehicle-selection-modal').classList.add('hidden');
-            
-            // Update placement mode
-            placementMode = 'destination';
-            document.getElementById('place-vehicle-btn').classList.add('hidden');
-            document.getElementById('place-destination-btn').classList.remove('hidden');
-            
-            // Add vehicle to AR view
-            addVehicleToAR();
-        }
-
-        // Add vehicle to AR view
-        function addVehicleToAR() {
-            const arOverlay = document.getElementById('ar-overlay');
-            
-            const vehicleElement = document.createElement('div');
-            vehicleElement.className = `emission-vehicle ${selectedVehicle}`;
-            vehicleElement.style.left = '50%';
-            vehicleElement.style.top = '50%';
-            vehicleElement.innerHTML = `
-                <div>${getVehicleName(selectedVehicle)}</div>
-                <div class="text-xs">${vehicleEmissions[selectedVehicle]} g/km</div>
-            `;
-            
-            arOverlay.appendChild(vehicleElement);
-            arObjects.push({
-                id: 'vehicle',
-                type: 'screen',
-                x: 50,
-                y: 50,
-                contentType: 'vehicle',
-                name: getVehicleName(selectedVehicle)
-            });
-        }
-
-        // Place destination at click position
-        function placeDestinationAtClick(event) {
-            if (!userLocation) {
-                alert('Lokasi tidak tersedia. Pastikan GPS aktif.');
-                return;
-            }
-            
-            // For simulation, we'll place the destination 10 meters away from the user
-            // In a real app, this would be based on the actual click position in the world
-            const offset = 0.0001; // Approximately 10 meters
-            
-            destinationPosition = {
-                lat: userLocation.latitude + offset,
-                lng: userLocation.longitude + offset
-            };
-            
-            // Calculate and show emission result
-            calculateEmission();
-            
-            // Reset placement mode
-            placementMode = null;
-            document.getElementById('place-destination-btn').classList.add('hidden');
-            document.getElementById('start-placement-btn').classList.remove('hidden');
-            document.getElementById('placement-indicator').classList.add('hidden');
-        }
-
-        // Calculate emission
-        function calculateEmission() {
-            if (!vehiclePosition || !destinationPosition || !selectedVehicle) return;
-            
-            // Calculate distance in real world (1m = 10km in simulation)
-            const realDistance = calculateDistance(
-                vehiclePosition.lat, 
-                vehiclePosition.lng,
-                destinationPosition.lat, 
-                destinationPosition.lng
-            );
-            
-            const simulatedDistance = realDistance * 10000; // Convert to km
-            
-            // Calculate emission
-            const emission = simulatedDistance * vehicleEmissions[selectedVehicle];
-            
-            // Show emission result
-            document.getElementById('emission-route-info').innerHTML = `
-                <div><strong>Rute Perjalanan</strong></div>
-                <div>Kendaraan: ${getVehicleName(selectedVehicle)}</div>
-                <div>Jarak: ${simulatedDistance.toFixed(2)} km</div>
-                <div>Faktor emisi: ${vehicleEmissions[selectedVehicle]} g/km</div>
-            `;
-            
-            document.getElementById('emission-value').textContent = `${emission.toFixed(2)} g CO₂`;
-            
-            // Add comparison
-            let comparison = '';
-            if (selectedVehicle === 'motor') {
-                comparison = `Ini setara dengan emisi dari ${(emission / 72).toFixed(1)} km perjalanan motor.`;
-            } else if (selectedVehicle === 'mobil') {
-                comparison = `Ini setara dengan emisi dari ${(emission / 120).toFixed(1)} km perjalanan mobil.`;
-            } else {
-                comparison = `Ini setara dengan emisi dari ${(emission / 223).toFixed(1)} km perjalanan truk.`;
-            }
-            
-            document.getElementById('emission-comparison').textContent = comparison;
-            
-            // Show modal
-            document.getElementById('emission-result-modal').classList.remove('hidden');
-            
-            // Update AR view with the route
-            updateARObjects();
-        }
-
-        // Get vehicle name
-        function getVehicleName(type) {
-            switch(type) {
-                case 'motor': return 'Motor Pribadi';
-                case 'mobil': return 'Mobil Pribadi';
-                case 'truk': return 'Truk';
-                default: return 'Kendaraan';
-            }
-        }
-
-        // Close vehicle selection modal
-        function closeVehicleSelection() {
-            document.getElementById('vehicle-selection-modal').classList.add('hidden');
-        }
-
-        // Close emission result modal
-        function closeEmissionResult() {
-            document.getElementById('emission-result-modal').classList.add('hidden');
-        }
-
-        // Show AR content
-        function showARContent(obj) {
-            // Create content display
-            const contentDisplay = document.createElement('div');
-            contentDisplay.className = 'ar-content-display';
-            contentDisplay.innerHTML = `
-                <div class="close-btn" onclick="this.parentElement.remove()">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </div>
-                <h3>${obj.name}</h3>
-                <div class="mt-2">
-                    ${obj.description || 'Tidak ada deskripsi tersedia.'}
-                </div>
-            `;
-            
-            document.getElementById('ar-overlay').appendChild(contentDisplay);
-        }
-
-        // Toggle between camera and map view
-        function toggleView(view) {
-            currentView = view;
-            
-            if (view === 'camera') {
-                document.getElementById('camera-view').classList.remove('hidden');
-                document.getElementById('map-view').classList.add('hidden');
-            } else {
-                document.getElementById('camera-view').classList.add('hidden');
-                document.getElementById('map-view').classList.remove('hidden');
-            }
-        }
-
-        // Toggle AR view mode between world and screen
-        function toggleARViewMode() {
-            arViewMode = arViewMode === 'world' ? 'screen' : 'world';
-            document.getElementById('ar-view-mode-text').textContent = 
-                `Tampilan AR: ${arViewMode === 'world' ? 'Dunia Nyata' : 'Layar'}`;
-            updateARObjects();
-        }
-
-        // Toggle debug info
-        function toggleDebugInfo() {
-            debugMode = !debugMode;
-            document.getElementById('debug-info').classList.toggle('hidden');
-        }
-
-        // Show content list
-        function showContentList() {
-            const contentList = document.getElementById('content-list');
-            contentList.innerHTML = '';
-            
-            arContentData.forEach(item => {
-                const contentItem = document.createElement('div');
-                contentItem.className = 'p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100';
-                contentItem.innerHTML = `
-                    <div class="font-medium">${item.nama}</div>
-                    <div class="text-sm text-gray-500 truncate">${item.url}</div>
-                `;
-                contentItem.addEventListener('click', function() {
-                    // Add this content to AR view
-                    addARContent(item);
-                    closeContentList();
-                });
-                
-                contentList.appendChild(contentItem);
-            });
-            
-            document.getElementById('content-list-modal').classList.remove('hidden');
-        }
-
-        // Close content list
-        function closeContentList() {
-            document.getElementById('content-list-modal').classList.add('hidden');
-        }
-
-        // Add AR content to the view
-        function addARContent(content) {
-            const newObject = {
-                id: Date.now().toString(),
-                name: content.nama,
-                url: content.url,
-                contentType: content.url.includes('.glb') || content.url.includes('.gltf') ? '3d-model' : 'image',
-                type: arViewMode,
-                x: Math.random() * 60 + 20, // Random position on screen
-                y: Math.random() * 60 + 20,
-                lat: userLocation ? userLocation.latitude + (Math.random() - 0.5) * 0.001 : null,
-                lng: userLocation ? userLocation.longitude + (Math.random() - 0.5) * 0.001 : null
-            };
-            
-            arObjects.push(newObject);
-            updateARObjects();
-        }
-
-        // Add sample AR objects for demonstration
-        function addSampleARObjects() {
-            // Add some sample objects if no data was loaded
-            if (arObjects.length === 0) {
-                arObjects = [
-                    {
-                        id: '1',
-                        name: 'Mobil Listrik',
-                        description: 'Kendaraan ramah lingkungan dengan emisi nol.',
-                        contentType: '3d-model',
-                        type: 'world',
-                        lat: userLocation ? userLocation.latitude + 0.0005 : -6.2088,
-                        lng: userLocation ? userLocation.longitude + 0.0005 : 106.8456
-                    },
-                    {
-                        id: '2',
-                        name: 'Pohon Penyerap Karbon',
-                        description: 'Pohon dapat menyerap CO2 dari atmosfer.',
-                        contentType: 'image',
-                        type: 'world',
-                        lat: userLocation ? userLocation.latitude - 0.0005 : -6.2093,
-                        lng: userLocation ? userLocation.longitude - 0.0005 : 106.8446
-                    },
-                    {
-                        id: '3',
-                        name: 'Pabrik Emisi',
-                        description: 'Sumber emisi karbon yang signifikan.',
-                        contentType: '3d-model',
-                        type: 'world',
-                        lat: userLocation ? userLocation.latitude + 0.001 : -6.2078,
-                        lng: userLocation ? userLocation.longitude - 0.001 : 106.8436
-                    }
-                ];
-            }
-        }
-
-        // Center map on user location
-        function centerMap() {
-            if (userLocation && map) {
-                map.setView([userLocation.latitude, userLocation.longitude], 15);
-            }
-        }
-
-        // Update UI based on current state
-        function updateUI() {
-            // Update any UI elements that depend on application state
-        }
-
-        // Place vehicle button handler
-        function placeVehicle() {
-            // This is handled by the camera click in placement mode
-        }
-
-        // Place destination button handler
-        function placeDestination() {
-            // This is handled by the camera click in placement mode
-        }
-    </script>
+</script>
 </body>
 </html>
