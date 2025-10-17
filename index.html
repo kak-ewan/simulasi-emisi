@@ -20,17 +20,15 @@
 </head>
 <body>
   <!-- AR Scene: use trackingMethod best and force environment camera -->
-  <a-scene
-    vr-mode-ui="enabled: false"
-    embedded
-    arjs="trackingMethod: best; sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
-  >
-    <!-- holder for placed models -->
-    <a-entity id="model-holder"></a-entity>
+<a-scene
+  vr-mode-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true; antialias: true;"
+  arjs="trackingMethod: best; sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
+>
+  <a-camera gps-camera rotation-reader></a-camera>
+  <a-entity id="model-holder"></a-entity>
+</a-scene>
 
-    <!-- GPS-enabled camera (kept to help AR.js/GPS flows) -->
-    <a-camera gps-camera rotation-reader></a-camera>
-  </a-scene>
 
   <!-- HUD: GPS status -->
   <div class="hud-info" id="gpsHud">
