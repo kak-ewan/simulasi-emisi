@@ -6,6 +6,8 @@
   <title>GeoEmisi AR — Simulasi Jejak Karbon</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <!-- Import model-viewer untuk 3D models -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script>
   <style>
     * {
       -webkit-tap-highlight-color: transparent;
@@ -98,8 +100,8 @@
     }
     
     .model-container { 
-      width: 120px; 
-      height: 120px; 
+      width: 150px; 
+      height: 150px; 
       background: rgba(59, 130, 246, 0.9); 
       border-radius: 12px; 
       display: flex; 
@@ -110,6 +112,14 @@
       font-size: 14px;
       box-shadow: 0 8px 25px rgba(0,0,0,0.3);
       border: 2px solid white;
+    }
+    
+    .model-viewer-container {
+      width: 200px;
+      height: 200px;
+      background: transparent;
+      border-radius: 12px;
+      overflow: hidden;
     }
     
     .loading-screen {
@@ -153,15 +163,15 @@
     
     .btn-mobile {
       padding: 14px 16px;
-      font-size: 16px; /* Minimum font size for mobile */
+      font-size: 16px;
       border: none;
       border-radius: 12px;
       font-weight: 600;
-      min-height: 48px; /* Minimum touch target size */
+      min-height: 48px;
     }
     
     select {
-      font-size: 16px !important; /* Prevent zoom on iOS */
+      font-size: 16px !important;
       padding: 12px !important;
       min-height: 48px;
     }
@@ -189,6 +199,20 @@
     .warning-screen {
       background: #d97706;
       color: white;
+    }
+
+    /* Object label */
+    .object-label {
+      position: absolute;
+      bottom: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      white-space: nowrap;
     }
   </style>
 </head>
@@ -271,6 +295,7 @@
     let simDist = 0;
     let cameraStream = null;
     let currentModel = null;
+    let currentObjectName = '';
     let initializationAttempts = 0;
 
     // Parse CSV data
@@ -287,7 +312,7 @@
             name: cols[nameIdx] || 'Unnamed', 
             url: cols[urlIdx] || '' 
           };
-        }).filter(obj => obj.url); // Filter out objects without URLs
+        }).filter(obj => obj.url);
       } catch (e) {
         console.error('CSV parsing error:', e);
         return [];
@@ -315,8 +340,24 @@
         return objects.length > 0;
       } catch (e) {
         console.error('Failed to load CSV:', e);
-        updateLoadingStatus('Gagal memuat data objek', true);
-        return false;
+        // Use fallback objects if CSV fails
+        objects = [
+          { name: "Pohon 3D", url: "https://cdn.glitch.global/7c71a2b3-0d3e-4b0e-9b4a-5a5a5a5a5a5a/tree.glb" },
+          { name: "Mobil Listrik", url: "https://cdn.glitch.global/7c71a2b3-0d3e-4b0e-9b4a-5a5a5a5a5a5a/electric-car.glb" },
+          { name: "Gambar Solar Panel", url: "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=150" }
+        ];
+        
+        const sel = document.getElementById('objectSelect');
+        sel.innerHTML = '<option value="">-- pilih objek --</option>';
+        objects.forEach((o, i) => {
+          const opt = document.createElement('option'); 
+          opt.value = i; 
+          opt.textContent = o.name; 
+          sel.appendChild(opt);
+        });
+        
+        updateLoadingStatus('Menggunakan data offline...');
+        return true;
       }
     }
 
@@ -329,10 +370,9 @@
           throw new Error('Browser tidak mendukung akses kamera');
         }
 
-        // Mobile-friendly constraints
         const constraints = {
           video: {
-            facingMode: 'environment', // Prefer rear camera
+            facingMode: 'environment',
             width: { ideal: 1280 },
             height: { ideal: 720 }
           },
@@ -342,7 +382,6 @@
         cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
         const videoElement = document.getElementById('camera-feed');
         
-        // Use event-based loading for mobile
         return new Promise((resolve, reject) => {
           videoElement.srcObject = cameraStream;
           
@@ -355,9 +394,8 @@
           
           videoElement.onerror = reject;
           
-          // Timeout fallback
           setTimeout(() => {
-            if (videoElement.readyState >= 2) { // HAVE_CURRENT_DATA
+            if (videoElement.readyState >= 2) {
               resolve(true);
             }
           }, 2000);
@@ -398,10 +436,7 @@
         document.getElementById('camera-permission-btn').classList.add('hidden');
         updateLoadingStatus('Meminta izin kamera...');
         
-        // Try to get permission without starting stream first
         await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        // If permission granted, retry initialization
         retryInitialization();
       } catch (error) {
         updateLoadingStatus('Izin kamera masih ditolak', true);
@@ -409,63 +444,102 @@
       }
     }
 
-    // Place 3D model in AR
-    function placeModel(url) {
+    // Place 3D model in AR - FIXED VERSION
+    function placeModel(url, objectName) {
+      // JANGAN hapus model jika simulasi aktif, kecuali setelah finish
+      if (simActive) {
+        alert('Tunggu simulasi selesai dulu sebelum mengganti objek!');
+        return;
+      }
+
       const overlay = document.getElementById('ar-overlay');
       
-      // Remove existing model
-      if (currentModel) {
+      // Remove existing model only if not in simulation
+      if (currentModel && !simActive) {
         overlay.removeChild(currentModel);
+        currentModel = null;
       }
       
       // Create new model container
       currentModel = document.createElement('div');
       currentModel.className = 'ar-object';
       currentModel.style.left = '50%';
-      currentModel.style.top = '40%'; // Position slightly higher for better visibility
+      currentModel.style.top = '40%';
+      currentObjectName = objectName;
       
-      // Create model content
-      const modelContainer = document.createElement('div');
-      modelContainer.className = 'model-container';
-      
+      // Determine content type and create appropriate element
       if (url.toLowerCase().includes('.glb') || url.toLowerCase().includes('.gltf')) {
-        modelContainer.textContent = '3D Model';
-        modelContainer.style.background = 'rgba(139, 69, 19, 0.9)';
+        // For 3D models - use model-viewer
+        const modelViewer = document.createElement('model-viewer');
+        modelViewer.src = url;
+        modelViewer.alt = objectName;
+        modelViewer.autoRotate = true;
+        modelViewer.cameraControls = true;
+        modelViewer.shadowIntensity = 1;
+        modelViewer.style.width = '200px';
+        modelViewer.style.height = '200px';
+        modelViewer.style.backgroundColor = 'transparent';
+        
+        const container = document.createElement('div');
+        container.className = 'model-viewer-container';
+        container.appendChild(modelViewer);
+        currentModel.appendChild(container);
+        
       } else if (url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
-        // For images, create img element
-        modelContainer.innerHTML = '';
+        // For images
         const img = document.createElement('img');
         img.src = url;
-        img.style.width = '100%';
-        img.style.height = '100%';
+        img.alt = objectName;
+        img.style.width = '150px';
+        img.style.height = '150px';
         img.style.objectFit = 'cover';
-        img.style.borderRadius = '10px';
+        img.style.borderRadius = '12px';
+        img.style.boxShadow = '0 8px 25px rgba(0,0,0,0.3)';
         img.onerror = function() {
           // Fallback if image fails to load
-          this.style.display = 'none';
           const fallback = document.createElement('div');
-          fallback.textContent = '📷';
-          fallback.style.fontSize = '40px';
-          modelContainer.appendChild(fallback);
+          fallback.className = 'model-container';
+          fallback.innerHTML = '📷<div style="font-size:10px;margin-top:5px;">Gambar</div>';
+          currentModel.appendChild(fallback);
         };
-        modelContainer.appendChild(img);
+        currentModel.appendChild(img);
       } else {
-        modelContainer.textContent = 'Object';
-        modelContainer.style.background = 'rgba(59, 130, 246, 0.9)';
+        // For other content types or invalid URLs
+        const container = document.createElement('div');
+        container.className = 'model-container';
+        container.innerHTML = '📦<div style="font-size:10px;margin-top:5px;">Object</div>';
+        currentModel.appendChild(container);
       }
       
-      currentModel.appendChild(modelContainer);
+      // Add object label
+      const label = document.createElement('div');
+      label.className = 'object-label';
+      label.textContent = objectName;
+      currentModel.appendChild(label);
+      
       overlay.appendChild(currentModel);
       
       // Add touch feedback
-      modelContainer.style.transition = 'transform 0.2s';
-      modelContainer.addEventListener('touchstart', () => {
-        modelContainer.style.transform = 'scale(0.95)';
+      currentModel.style.transition = 'transform 0.2s';
+      currentModel.addEventListener('touchstart', () => {
+        currentModel.style.transform = 'translate(-50%, -50%) scale(0.95)';
       });
       
-      modelContainer.addEventListener('touchend', () => {
-        modelContainer.style.transform = 'scale(1)';
+      currentModel.addEventListener('touchend', () => {
+        currentModel.style.transform = 'translate(-50%, -50%) scale(1)';
       });
+
+      console.log('Object placed:', objectName, 'URL:', url);
+    }
+
+    // Clear AR object when simulation finishes
+    function clearARObject() {
+      const overlay = document.getElementById('ar-overlay');
+      if (currentModel) {
+        overlay.removeChild(currentModel);
+        currentModel = null;
+        currentObjectName = '';
+      }
     }
 
     // Start location tracking
@@ -489,7 +563,7 @@
           
           if (simActive && simStartPos) {
             const d = haversine(simStartPos, currentPosition);
-            simDist = d / 1000; // Convert meters to kilometers
+            simDist = d / 1000;
             updateDistanceDisplay();
           }
         }, 
@@ -551,7 +625,7 @@
 
     // Haversine distance calculation
     function haversine(a, b) {
-      const R = 6371000; // Earth radius in meters
+      const R = 6371000;
       const toRad = x => x * Math.PI / 180;
       const dLat = toRad(b.lat - a.lat);
       const dLon = toRad(b.lng - a.lng);
@@ -582,20 +656,16 @@
       try {
         updateLoadingStatus('Memulai aplikasi...');
         
-        // Start camera first
         const cameraSuccess = await startCamera();
         if (!cameraSuccess) return;
         
-        // Load CSV data
         const csvSuccess = await loadCSV();
         if (!csvSuccess) {
           updateLoadingStatus('Gagal memuat data, menggunakan mode offline...');
         }
         
-        // Start GPS
         startWatch();
         
-        // Hide loading screen with delay for better UX
         setTimeout(() => {
           document.getElementById('loading-screen').style.display = 'none';
         }, 1000);
@@ -607,7 +677,7 @@
       }
     }
 
-    // Event listeners with mobile optimizations
+    // Event listeners dengan logika yang diperbaiki
     document.getElementById('btnPlace').addEventListener('click', () => {
       const idx = document.getElementById('objectSelect').value;
       if (idx === '') {
@@ -615,7 +685,7 @@
         return;
       }
       const obj = objects[idx];
-      placeModel(obj.url);
+      placeModel(obj.url, obj.name);
     });
 
     document.getElementById('btnStart').addEventListener('click', () => {
@@ -623,13 +693,29 @@
         alert('Menunggu GPS aktif...');
         return;
       }
+      
+      if (!currentModel) {
+        alert('Letakkan objek AR terlebih dahulu!');
+        return;
+      }
+      
       simStartPos = {...currentPosition};
       simDist = 0;
       simActive = true;
       document.getElementById('btnStart').disabled = true;
       document.getElementById('btnFinish').disabled = false;
+      document.getElementById('btnPlace').disabled = true; // Disable place button during simulation
+      document.getElementById('objectSelect').disabled = true;
+      
       updateGPSStatus(true, '🟢 Simulasi aktif...');
       updateDistanceDisplay();
+      
+      // Update object label to show simulation status
+      const label = currentModel.querySelector('.object-label');
+      if (label) {
+        label.textContent = `${currentObjectName} (Simulasi Aktif)`;
+        label.style.background = 'rgba(34, 197, 94, 0.8)';
+      }
     });
 
     document.getElementById('btnFinish').addEventListener('click', () => {
@@ -637,19 +723,23 @@
         alert('Simulasi belum dimulai');
         return;
       }
-      simActive = false;
-      document.getElementById('btnStart').disabled = false;
-      document.getElementById('btnFinish').disabled = true;
       
       const mode = document.getElementById('transportMode').value;
       const emisi = simDist * (emissionFactors[mode] || 0);
       
-      updateGPSStatus(true, '✅ Simulasi selesai');
-      
-      // Mobile-friendly alert
-      if (window.confirm(`Simulasi selesai!\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg\n\nOK untuk melanjutkan?`)) {
-        // User confirmed
+      // Tampilkan hasil dan konfirmasi clear object
+      if (window.confirm(`Simulasi selesai!\n\nJarak: ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg\n\nHapus objek AR?`)) {
+        clearARObject();
       }
+      
+      // Reset simulation state
+      simActive = false;
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnFinish').disabled = true;
+      document.getElementById('btnPlace').disabled = false; // Enable place button again
+      document.getElementById('objectSelect').disabled = false;
+      
+      updateGPSStatus(true, '✅ Simulasi selesai');
     });
 
     // Transport mode change
@@ -664,10 +754,6 @@
       if (e.touches.length > 1) {
         e.preventDefault();
       }
-    }, { passive: false });
-
-    document.addEventListener('touchend', function(e) {
-      e.preventDefault();
     }, { passive: false });
 
     // Start the application when DOM is ready
@@ -687,16 +773,11 @@
       }
     });
 
-    // Handle page visibility changes (for mobile)
+    // Handle page visibility changes
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        // Page is hidden, pause if needed
-      } else {
-        // Page is visible again
-        if (cameraStream) {
-          const video = document.getElementById('camera-feed');
-          video.play().catch(console.error);
-        }
+      if (!document.hidden && cameraStream) {
+        const video = document.getElementById('camera-feed');
+        video.play().catch(console.error);
       }
     });
   </script>
