@@ -147,12 +147,24 @@
       });
     }
 
-    function calcDist(a,b){
-      const R=6371000; const toRad=x=>x*Math.PI/180;
-      const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lng-a.lng);
-      const c=2*Math.atan2(Math.sqrt(Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2),Math.sqrt(1-(Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2))));
-      return R*c; // meters (1m=1km simulated)
-    }
+function calcDist(a, b) {
+  const R = 6371000; // meter
+  const toRad = x => x * Math.PI / 180;
+
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const hav =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+  return R * c; // hasil meter
+}
+
 
     function onOpenPoint(p){
       document.getElementById('current-ar').value=p.id;
