@@ -1,48 +1,67 @@
 <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GeoEmisi AR — Simulasi Jejak Karbon</title>
+  <title>GeoEmisi AR — Simulasi Jejak Karbon (GPS Fix + Kamera)</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-ar@1.8.1/dist/aframe-ar.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Poppins', sans-serif; margin: 0; overflow: hidden; }
-    .overlay-ui { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 10px 16px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); z-index: 10; width: calc(100% - 40px); max-width: 420px; }
+    .overlay-ui { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 10px 14px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); z-index: 20; width: calc(100% - 36px); max-width: 460px; }
     .overlay-ui select, .overlay-ui button { font-size: 14px; }
-    .hud-info { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 14px; border-radius: 8px; z-index: 10; text-align: center; }
+    .hud-info { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 8px; z-index: 20; text-align: center; }
+    .status-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+    #ar-overlay a-entity { pointer-events:none; }
   </style>
 </head>
 <body>
-  <!-- Scene AR -->
-  <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
-    <a-entity camera look-controls></a-entity>
+  <!-- AR Scene: use trackingMethod best and force environment camera -->
+  <a-scene
+    vr-mode-ui="enabled: false"
+    embedded
+    arjs="trackingMethod: best; sourceType: webcam; facingMode: environment; debugUIEnabled: false;"
+  >
+    <!-- holder for placed models -->
     <a-entity id="model-holder"></a-entity>
+
+    <!-- GPS-enabled camera (kept to help AR.js/GPS flows) -->
+    <a-camera gps-camera rotation-reader></a-camera>
   </a-scene>
 
-  <!-- Overlay UI -->
-  <div class="overlay-ui">
+  <!-- HUD: GPS status -->
+  <div class="hud-info" id="gpsHud">
+    <span id="gpsDot" class="status-dot" style="background:#f59e0b"></span>
+    <span id="gpsText">📡 Mendeteksi lokasi...</span>
+  </div>
+
+  <!-- Controls -->
+  <div class="overlay-ui" role="region" aria-label="Kontrol GeoEmisi">
     <div class="flex flex-col gap-2">
       <div>
-        <label class="text-xs text-gray-600">Pilih Objek dari CSV</label>
-        <select id="objectSelect" class="w-full border rounded px-2 py-1"></select>
+        <label class="text-xs text-gray-600">Pilih Objek (CSV: nama, url)</label>
+        <select id="objectSelect" class="w-full border rounded px-2 py-1" aria-label="Pilih objek"></select>
       </div>
+
       <div class="flex gap-2">
         <button id="btnPlace" class="flex-1 bg-blue-600 text-white rounded px-3 py-2">Letakkan Objek</button>
         <button id="btnStart" class="flex-1 bg-emerald-500 text-white rounded px-3 py-2">Start</button>
         <button id="btnFinish" class="flex-1 bg-red-500 text-white rounded px-3 py-2" disabled>Finish</button>
       </div>
+
       <div>
         <label class="text-xs text-gray-600">Mode Transportasi</label>
-        <select id="transportMode" class="w-full border rounded px-2 py-1">
+        <select id="transportMode" class="w-full border rounded px-2 py-1" aria-label="Mode transportasi">
           <option value="motor">Motor Pribadi</option>
           <option value="mobil">Mobil Pribadi</option>
           <option value="umum">Angkutan Umum</option>
           <option value="truk">Truk</option>
         </select>
       </div>
+
       <div class="text-sm text-gray-800 mt-2">
         <div>Jarak tempuh: <strong id="distVal">0.00</strong> km</div>
         <div>Emisi CO₂: <strong id="emisVal">0.00</strong> kg</div>
@@ -50,116 +69,160 @@
     </div>
   </div>
 
-  <div class="hud-info text-sm text-gray-700">
-    <div><strong>GeoEmisi AR</strong></div>
-    <div>Letakkan model, lalu mulai simulasi.</div>
-  </div>
-
   <script>
+    // Config
     const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
     const emissionFactors = { motor: 0.1, mobil: 0.25, umum: 0.05, truk: 0.4 };
 
+    // State
     let objects = [];
     let currentPosition = null;
-    let startPos = null;
     let watchId = null;
     let simActive = false;
-    let simDist = 0;
+    let simStartPos = null;
+    let simDist = 0; // km simulated (we'll compute meters and treat 1 m = 1 km)
 
-    // --- Load CSV ---
+    // Helpers
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(h => h.replace(/"/g,'').trim().toLowerCase());
+      const nameIdx = headers.findIndex(h => h.includes('name')||h.includes('nama')||h.includes('title'));
+      const urlIdx = headers.findIndex(h => h.includes('url'));
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const cols = lines[i].split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^\"|\"$/g,'').trim());
+        const name = cols[nameIdx] || `Objek ${i}`;
+        const url = cols[urlIdx] || '';
+        rows.push({ name, url });
+      }
+      return rows;
+    }
+
     async function loadCSV() {
       try {
         const res = await fetch(csvUrl);
-        const text = await res.text();
-        const rows = text.trim().split('\n').map(r=>r.split(','));
-        const headers = rows[0].map(h=>h.toLowerCase());
-        const nameIdx = headers.findIndex(h=>h.includes('name')||h.includes('nama'));
-        const urlIdx = headers.findIndex(h=>h.includes('url'));
-        objects = rows.slice(1).map(r=>({ name:r[nameIdx], url:r[urlIdx] }));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const txt = await res.text();
+        objects = parseCSV(txt);
         populateSelect();
       } catch (e) {
-        alert('Gagal memuat CSV');
-        console.error(e);
+        console.error('Gagal memuat CSV', e);
+        alert('Gagal memuat CSV. Periksa URL / koneksi.');
       }
     }
 
     function populateSelect() {
       const sel = document.getElementById('objectSelect');
-      sel.innerHTML = '<option value="">Pilih objek...</option>';
-      objects.forEach((o,i)=>{
-        const opt = document.createElement('option');
-        opt.value = i; opt.textContent = o.name; sel.appendChild(opt);
+      sel.innerHTML = '<option value="">-- pilih objek --</option>';
+      objects.forEach((o, idx) => {
+        const opt = document.createElement('option'); opt.value = idx; opt.textContent = o.name; sel.appendChild(opt);
       });
     }
 
-    // --- Place Object ---
-    document.getElementById('btnPlace').addEventListener('click', ()=>{
-      const idx = document.getElementById('objectSelect').value;
-      if(idx==='') return alert('Pilih objek terlebih dahulu.');
-      const obj = objects[idx];
-      placeModel(obj.url);
-    });
-
+    // Place model into AR scene (in front of camera)
     function placeModel(url) {
       const holder = document.getElementById('model-holder');
       holder.innerHTML = '';
-      const model = document.createElement('a-entity');
-      model.setAttribute('gltf-model', url);
-      model.setAttribute('position', '0 0 -2');
-      model.setAttribute('scale', '0.5 0.5 0.5');
-      holder.appendChild(model);
+      const entity = document.createElement('a-entity');
+      // GLTF model
+      entity.setAttribute('gltf-model', url);
+      // put it 2 meters in front of camera
+      entity.setAttribute('position', '0 0 -2');
+      entity.setAttribute('scale', '0.5 0.5 0.5');
+      // allow user to tap to remove later
+      entity.setAttribute('id', 'placedModel');
+      holder.appendChild(entity);
+
+      // also show a small anchor so placement feels anchored
+      const anchor = document.createElement('a-entity');
+      anchor.setAttribute('geometry', 'primitive: ring; radiusInner: 0.3; radiusOuter: 0.35');
+      anchor.setAttribute('material', 'color: #10b981; opacity: 0.8');
+      anchor.setAttribute('position', '0 -0.8 -2');
+      holder.appendChild(anchor);
     }
 
-    // --- Start Simulation ---
-    document.getElementById('btnStart').addEventListener('click', ()=>{
-      if(!currentPosition) return alert('Menunggu lokasi GPS...');
-      startPos = {...currentPosition};
-      simDist = 0;
-      simActive = true;
-      document.getElementById('btnStart').disabled = true;
-      document.getElementById('btnFinish').disabled = false;
-      alert('Simulasi dimulai! Bergeraklah, jarak akan dihitung.');
+    // Geolocation (watch)
+    function startWatch() {
+      if (!navigator.geolocation) {
+        updateGPSStatus(false, 'Geolokasi tidak didukung');
+        return;
+      }
+      updateGPSStatus(false, '📡 Mendeteksi lokasi...');
+      watchId = navigator.geolocation.watchPosition(pos => {
+        currentPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        updateGPSStatus(true, '✅ Lokasi terdeteksi (GPS aktif)');
+        // if simulation is active, update distance
+        if (simActive && simStartPos) {
+          const meters = haversine(simStartPos, currentPosition);
+          // mapping: 1 m physical = 1 km simulated
+          simDist = meters * 1.0; // in km because meters*1 = km per user's requested mapping
+          // but haversine returns meters, so simDist (km) = meters
+          // we will show as km directly per requirement
+          document.getElementById('distVal').textContent = simDist.toFixed(2);
+          const mode = document.getElementById('transportMode').value;
+          document.getElementById('emisVal').textContent = (simDist * (emissionFactors[mode]||0)).toFixed(2);
+        }
+      }, err => {
+        console.error('watchPosition err', err);
+        updateGPSStatus(false, 'Gagal mendapat lokasi');
+      }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+    }
+
+    function updateGPSStatus(ok, text) {
+      const dot = document.getElementById('gpsDot');
+      const t = document.getElementById('gpsText');
+      if (ok) dot.style.background = '#16a34a'; else dot.style.background = '#f59e0b';
+      t.textContent = text;
+    }
+
+    // Haversine distance (meters)
+    function haversine(a, b) {
+      const R = 6371000; const toRad = x => x * Math.PI / 180;
+      const dLat = toRad(b.lat - a.lat); const dLon = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat); const lat2 = toRad(b.lat);
+      const hav = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+      return R * c; // meters
+    }
+
+    // Simulation controls
+    document.getElementById('btnPlace').addEventListener('click', () => {
+      const idx = document.getElementById('objectSelect').value;
+      if (idx === '') return alert('Pilih objek terlebih dulu.');
+      const obj = objects[parseInt(idx)];
+      placeModel(obj.url);
     });
 
-    document.getElementById('btnFinish').addEventListener('click', ()=>{
-      if(!simActive) return alert('Simulasi belum aktif.');
+    document.getElementById('btnStart').addEventListener('click', () => {
+      if (!currentPosition) return alert('Tunggu GPS aktif terlebih dahulu.');
+      simStartPos = { ...currentPosition };
+      simActive = true;
+      simDist = 0;
+      document.getElementById('btnStart').disabled = true;
+      document.getElementById('btnFinish').disabled = false;
+      updateGPSStatus(true, '🟢 Simulasi dimulai — sedang merekam posisi...');
+    });
+
+    document.getElementById('btnFinish').addEventListener('click', () => {
+      if (!simActive) return alert('Simulasi belum dimulai.');
       simActive = false;
       document.getElementById('btnStart').disabled = false;
       document.getElementById('btnFinish').disabled = true;
       const mode = document.getElementById('transportMode').value;
-      const emisi = simDist * (emissionFactors[mode]||0);
+      const emisi = simDist * (emissionFactors[mode] || 0);
       document.getElementById('emisVal').textContent = emisi.toFixed(2);
-      alert(`Simulasi selesai!\nJarak: ${simDist.toFixed(2)} km\nEmisi: ${emisi.toFixed(2)} kg CO₂`);
+      updateGPSStatus(true, '✅ Simulasi selesai');
+      alert(`Simulasi selesai\nJarak (simulasi): ${simDist.toFixed(2)} km\nEmisi CO₂: ${emisi.toFixed(2)} kg`);
     });
 
-    // --- Geolocation ---
-    function startWatch() {
-      if(!navigator.geolocation) return alert('Geolokasi tidak didukung');
-      watchId = navigator.geolocation.watchPosition(pos => {
-        currentPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        if(simActive && startPos) {
-          const dist = haversine(startPos, currentPosition) / 1000; // convert to km
-          simDist = dist;
-          document.getElementById('distVal').textContent = simDist.toFixed(2);
-        }
-      }, err => console.error(err), { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
-    }
-
-    function haversine(a, b) {
-      const R = 6371000; const toRad = x => x * Math.PI / 180;
-      const dLat = toRad(b.lat - a.lat);
-      const dLon = toRad(b.lng - a.lng);
-      const lat1 = toRad(a.lat);
-      const lat2 = toRad(b.lat);
-      const hav = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-      const c = 2 * Math.atan2(Math.sqrt(hav), Math.sqrt(1-hav));
-      return R * c; // meter
-    }
-
-    document.addEventListener('DOMContentLoaded', ()=>{
+    // Init
+    (function init(){
       loadCSV();
       startWatch();
-    });
+      // resize handler to ensure scene covers screen when embedded
+      window.addEventListener('resize', ()=>{ const scene = document.querySelector('a-scene'); if(scene) scene.style.height = window.innerHeight + 'px'; });
+    })();
   </script>
 </body>
 </html>
