@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simulasi Distribusi — Jejak Karbon</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Poppins', sans-serif; background: #f8fafc; }
+    #camera-feed { background: #000; width:100%; height:100%; object-fit:cover; }
+    .overlay { position:absolute; left:0; right:0; top:0; bottom:0; pointer-events:none; }
+    .panel { pointer-events:auto; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-4xl mx-auto p-4">
+    <h1 class="text-2xl font-semibold text-sky-700 mb-2">Simulasi Distribusi — Jejak Karbon (CSV Terintegrasi)</h1>
+    <p class="text-sm text-gray-600 mb-4">Data titik AR diambil dari Google Sheets. Buka titik AR, tekan <strong>Start</strong>, pilih moda transportasi, lalu berpindah ke titik berikutnya. Setiap 1 m fisik dianggap 1 km simulasi.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Camera / AR preview -->
+      <div class="relative bg-black h-80 rounded-lg overflow-hidden">
+        <video id="camera-feed" autoplay playsinline></video>
+        <div id="ar-overlay" class="overlay"></div>
+        <div class="absolute top-3 left-3 z-30">
+          <button id="btn-toggle-map" class="bg-white px-3 py-2 rounded shadow text-sm">Peta</button>
+        </div>
+      </div>
+
+      <!-- Control panel -->
+      <div class="bg-white rounded-lg p-4 shadow h-80 flex flex-col gap-3">
+        <div>
+          <label class="block text-xs text-gray-500">Titik AR Saat Ini</label>
+          <select id="current-ar" class="mt-1 w-full border rounded px-2 py-1"></select>
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-500">Mode Transportasi</label>
+          <select id="transport-mode" class="mt-1 w-full border rounded px-2 py-1">
+            <option value="motor">Motor Pribadi</option>
+            <option value="mobil">Mobil Pribadi</option>
+            <option value="umum">Angkutan Umum</option>
+            <option value="truk">Truk</option>
+          </select>
+        </div>
+
+        <div class="flex gap-2 mt-2">
+          <button id="btn-start" class="bg-emerald-500 text-white px-4 py-2 rounded shadow">Start</button>
+          <button id="btn-finish" class="bg-red-500 text-white px-4 py-2 rounded shadow" disabled>Selesai</button>
+          <button id="btn-reset" class="bg-gray-200 px-3 py-2 rounded">Reset</button>
+        </div>
+
+        <div class="mt-2 p-3 bg-slate-50 rounded flex-1 overflow-auto">
+          <h3 class="font-medium text-sky-700">Ringkasan Simulasi</h3>
+          <div id="summary" class="text-sm text-gray-700 mt-2">Belum ada simulasi.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="map-container" class="mt-4 hidden">
+      <div id="map" style="height:420px;border-radius:8px;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <script>
+    const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
+    const emissionFactors = { motor: 0.1, mobil: 0.25, umum: 0.05, truk: 0.4 };
+
+    let arPoints = [];
+    let map, currentPosition = null, watchId = null;
+    let simulationActive = false, selectedTransport = null;
+    let totalSimulatedDistance = 0, lastSimPos = null, visitedSequence = [];
+
+    async function loadCSV() {
+      try {
+        const res = await fetch(csvUrl);
+        const text = await res.text();
+        const rows = text.trim().split('\n').map(r=>r.split(','));
+        const headers = rows[0].map(h => h.toLowerCase());
+        const latIdx = headers.findIndex(h=>h.includes('lat'));
+        const lonIdx = headers.findIndex(h=>h.includes('lon'));
+        const nameIdx = headers.findIndex(h=>h.includes('nama'));
+
+        arPoints = rows.slice(1).map(r=>({
+          id: 'p'+Math.random().toString(36).substring(2,7),
+          title: r[nameIdx]||'Titik',
+          lat: parseFloat(r[latIdx]),
+          lng: parseFloat(r[lonIdx])
+        })).filter(p=>!isNaN(p.lat)&&!isNaN(p.lng));
+        console.log('Loaded', arPoints);
+        initApp();
+      } catch(e) {
+        alert('Gagal memuat data CSV');
+        console.error(e);
+      }
+    }
+
+    function initApp() {
+      const sel = document.getElementById('current-ar');
+      sel.innerHTML = '';
+      arPoints.forEach(p => {
+        const opt = document.createElement('option'); opt.value=p.id; opt.textContent=p.title; sel.appendChild(opt);
+      });
+      document.getElementById('btn-start').addEventListener('click', onStart);
+      document.getElementById('btn-finish').addEventListener('click', onFinish);
+      document.getElementById('btn-reset').addEventListener('click', onReset);
+      document.getElementById('btn-toggle-map').addEventListener('click', toggleMap);
+      initMap(); startCamera(); startWatch(); updateSummary();
+    }
+
+    function initMap() {
+      map = L.map('map').setView([arPoints[0].lat, arPoints[0].lng], 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      arPoints.forEach(p => {
+        const m = L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.title);
+        m.on('click', ()=>onOpenPoint(p));
+      });
+    }
+
+    function toggleMap(){
+      const m = document.getElementById('map-container');
+      m.classList.toggle('hidden');
+      if(!m.classList.contains('hidden')) map.invalidateSize();
+    }
+
+    async function startCamera(){
+      try{
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        document.getElementById('camera-feed').srcObject = stream;
+      }catch(e){console.warn(e);}
+    }
+
+    function startWatch(){
+      if(!navigator.geolocation)return;
+      watchId=navigator.geolocation.watchPosition(p=>{
+        currentPosition={lat:p.coords.latitude,lng:p.coords.longitude};
+        if(simulationActive&&lastSimPos){
+          const dist=calcDist(lastSimPos,currentPosition);
+          totalSimulatedDistance+=dist;
+          lastSimPos={...currentPosition};
+          updateSummary();
+        }
+      });
+    }
+
+    function calcDist(a,b){
+      const R=6371000; const toRad=x=>x*Math.PI/180;
+      const dLat=toRad(b.lat-a.lat), dLon=toRad(b.lng-a.lng);
+      const c=2*Math.atan2(Math.sqrt(Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2),Math.sqrt(1-(Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2))));
+      return R*c; // meters (1m=1km simulated)
+    }
+
+    function onOpenPoint(p){
+      document.getElementById('current-ar').value=p.id;
+      if(simulationActive) document.getElementById('btn-finish').disabled=false;
+      if(map) map.setView([p.lat,p.lng],17);
+      if(visitedSequence.at(-1)!==p.id) visitedSequence.push(p.id);
+      updateSummary();
+    }
+
+    function onStart(){
+      if(!currentPosition) return alert('Menunggu lokasi GPS...');
+      selectedTransport=document.getElementById('transport-mode').value;
+      simulationActive=true; totalSimulatedDistance=0; lastSimPos={...currentPosition};
+      visitedSequence=[document.getElementById('current-ar').value];
+      document.getElementById('btn-start').disabled=true;
+      document.getElementById('btn-finish').disabled=false;
+      updateSummary();
+      alert('Simulasi dimulai. Bergerak ke titik berikutnya.');
+    }
+
+    function onFinish(){
+      simulationActive=false;
+      document.getElementById('btn-start').disabled=false;
+      document.getElementById('btn-finish').disabled=true;
+      const factor=emissionFactors[selectedTransport]||0;
+      const emisi=totalSimulatedDistance*factor;
+      alert(`Selesai!\nJarak: ${totalSimulatedDistance.toFixed(2)} km\nEmisi: ${emisi.toFixed(2)} kg CO₂`);
+      updateSummary(true,emisi);
+    }
+
+    function onReset(){
+      simulationActive=false;selectedTransport=null;totalSimulatedDistance=0;lastSimPos=null;visitedSequence=[];
+      document.getElementById('btn-start').disabled=false;document.getElementById('btn-finish').disabled=true;
+      updateSummary();
+    }
+
+    function updateSummary(final=false,em=0){
+      const el=document.getElementById('summary');
+      let html=`<div>Status: ${simulationActive?'Aktif':'Tidak aktif'}</div>`;
+      html+=`<div>Jarak (simulasi): ${totalSimulatedDistance.toFixed(2)} km</div>`;
+      html+=`<div>Moda: ${selectedTransport||'-'}</div>`;
+      if(final) html+=`<div class='text-red-600'>Emisi: ${em.toFixed(2)} kg CO₂</div>`;
+      html+=`<div>Rute: ${visitedSequence.join(' → ')||'-'}</div>`;
+      el.innerHTML=html;
+    }
+
+    document.addEventListener('DOMContentLoaded',loadCSV);
+  </script>
+</body>
+</html>
