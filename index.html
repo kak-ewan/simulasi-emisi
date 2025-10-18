@@ -44,7 +44,6 @@
   #ar-topbar{position:absolute; top:12px; left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; pointer-events:none;}
   .ar-btn{pointer-events:auto; background:rgba(255,255,255,0.9); padding:8px 10px; border-radius:10px; font-weight:800; border:none; cursor:pointer;}
   .ar-sampai{background:var(--accent-2); color:white;}
-  /* responsive small */
   @media (max-width:420px){ .wrap{padding:8px;} h1{font-size:18px;} }
 </style>
 
@@ -60,7 +59,6 @@
   <div class="wrap">
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
       <div class="cloud" aria-hidden="true">
-        <!-- simple cloud icon -->
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M19 17H6a4 4 0 010-8 5 5 0 019.9-1.2A3.5 3.5 0 0119 11.5 3.5 3.5 0 0119 17z" fill="#7dd3fc"/></svg>
       </div>
       <div>
@@ -69,7 +67,6 @@
       </div>
     </div>
 
-    <!-- camera preview -->
     <div class="card" id="preview">
       <video id="camera" autoplay playsinline muted></video>
 
@@ -86,7 +83,6 @@
       </div>
     </div>
 
-    <!-- list + controls -->
     <div class="card">
       <div class="row" style="justify-content:space-between; align-items:center;">
         <div><strong>Pilih Kendaraan</strong><div class="muted">Pilih satu dulu</div></div>
@@ -95,6 +91,7 @@
             <option value="motor">🛵 Motor</option>
             <option value="mobil" selected>🚗 Mobil</option>
             <option value="truk">🚚 Truk</option>
+            <option value="cidomo">🐎 Cidomo</option>
           </select>
         </div>
       </div>
@@ -107,11 +104,9 @@
       <div id="map" style="margin-top:10px;"></div>
     </div>
 
-    <!-- result -->
     <div class="card row" style="justify-content:space-between; align-items:center;">
       <div class="emission">
         <div class="cloud" aria-hidden="true">
-          <!-- carbon cloud icon -->
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3v10" stroke="#60a5fa" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="17" r="3" fill="#a7f3d0"/></svg>
         </div>
         <div style="margin-left:8px;">
@@ -128,9 +123,7 @@
 
   </div>
 
-  <!-- Fullscreen AR modal (kamera fullscreen + model-viewer) -->
   <div id="ar-modal" role="dialog" aria-hidden="true">
-    <!-- top controls -->
     <div id="ar-topbar">
       <button id="ar-exit" class="ar-btn">Keluar ✖</button>
       <div style="display:flex; gap:8px;">
@@ -138,7 +131,6 @@
       </div>
     </div>
 
-    <!-- model viewer fills screen -->
     <model-viewer id="mv"
       camera-controls
       ar
@@ -149,14 +141,8 @@
   </div>
 
 <script>
-/* GeoEmisi AR - Kids Edition (fixed)
-   - Perbaikan: daftar objek selalu muncul
-   - Baca kolom 'name' atau 'nama'
-   - Warna latar list diperjelas
-*/
-
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTs7itzWflajvX9yJuHBaEOGwyRqUU2q7UXDJDbhaekQRxtAItAV-AH-BwaXzCTDLbCDbTVJRlFySt_/pub?gid=1923680956&single=true&output=csv';
-const FACTORS = { motor:120, mobil:200, truk:900 };
+const FACTORS = { motor:120, mobil:200, truk:900, cidomo:0 };
 
 let items = [];
 let selected = null;
@@ -207,7 +193,6 @@ async function loadCSV(){
     const r=await fetch(CSV_URL);
     const txt=await r.text();
     items=parseCSV(txt);
-    console.log('Parsed items:',items);
     renderList();
   }catch(e){
     console.error('CSV error',e);
@@ -224,7 +209,7 @@ function renderList(){
   items.forEach(it=>{
     const el=document.createElement('div');
     el.className='obj';
-    el.style.background='#e0f2fe'; // biru muda agar kontras
+    el.style.background='#e0f2fe';
     el.innerHTML=`
       <div style="min-width:0">
         <div class="title">${it.title}</div>
@@ -245,7 +230,6 @@ function renderList(){
   });
 }
 
-/* Geolocation helper */
 function getGeo(opts={}) {
   return new Promise((res,rej)=>{
     if(!navigator.geolocation) return rej('no geo');
@@ -302,7 +286,6 @@ async function handleSampai(){
   }catch(e){alert('Gagal ambil lokasi');}
 }
 
-/* jarak */
 function dist(a,b,c,d){
   const R=6371e3,rad=x=>x*Math.PI/180;
   const φ1=rad(a),φ2=rad(c),dφ=rad(c-a),dλ=rad(d-b);
@@ -310,7 +293,6 @@ function dist(a,b,c,d){
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/* map markers */
 function placeStart(it){
   if(!map)return;
   if(markers[it.id])map.removeLayer(markers[it.id]);
@@ -329,7 +311,6 @@ function drawRoute(a,b){
   map.fitBounds(pl.getBounds(),{padding:[20,20]});
 }
 
-/* camera */
 async function startCam(){
   try{
     const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
@@ -337,7 +318,6 @@ async function startCam(){
   }catch(e){console.warn(e);}
 }
 
-/* events */
 arExit.addEventListener('click',closeAR);
 arSampaiBtn.addEventListener('click',handleSampai);
 btnSampai.addEventListener('click',handleSampai);
@@ -349,7 +329,6 @@ btnCenter.addEventListener('click',async()=>{
   }catch(e){}
 });
 
-/* start */
 (async()=>{
   initMap();
   await loadCSV();
